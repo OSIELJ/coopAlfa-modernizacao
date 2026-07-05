@@ -427,3 +427,16 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# ===== CoopAlfa - Adições do projeto =====
+
+# GnuCOBOL - binários compilados
+*.so
+src/cobol/build/
+
+# Arquivo indexado COBOL (dados do legado)
+*.dat
+*.idx
+
+# SonarQube local
+.sonarqube/
