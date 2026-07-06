@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using CoopAlfa.Api.Models;
 using CoopAlfa.Api.Services;
-using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 
 namespace CoopAlfa.Api.Controllers;
@@ -10,9 +9,9 @@ namespace CoopAlfa.Api.Controllers;
 [Route("api/[controller]")]
 public class ClientesController : ControllerBase
 {
-    private readonly ClienteService _service;
+    private readonly IClienteService _service;
 
-    public ClientesController(ClienteService service)
+    public ClientesController(IClienteService service)
     {
         _service = service;
     }
@@ -55,7 +54,6 @@ public class ClientesController : ControllerBase
             return BadRequest(ApiResponse<ClienteModel>.Erro(
                 "Código inválido. Deve ser um número entre 1 e 9999."));
 
-        // Validação de telefone: (XX) XXXXX-XXXX ou (XX) XXXX-XXXX
         if (!string.IsNullOrEmpty(request.Telefone))
         {
             var telRegex = @"^\(\d{2}\) \d{4,5}-\d{4}$";
@@ -64,7 +62,6 @@ public class ClientesController : ControllerBase
                     "Telefone inválido. Use o formato (XX) XXXXX-XXXX."));
         }
 
-        // Validação de e-mail
         if (!string.IsNullOrEmpty(request.Email))
         {
             var emailRegex = @"^[^@\s]+@[^@\s]+\.[^@\s]+$";
@@ -79,7 +76,6 @@ public class ClientesController : ControllerBase
         if (!sucesso)
             return NotFound(ApiResponse<ClienteModel>.Erro(mensagem));
 
-        // Retorna os dados atualizados
         var cliente = _service.Consultar(codigo);
         return Ok(ApiResponse<ClienteModel>.Ok(cliente!, mensagem));
     }
