@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace CoopAlfa.Shared;
+namespace CoopAlfa.Api;
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 1)]
 public struct ClienteStruct

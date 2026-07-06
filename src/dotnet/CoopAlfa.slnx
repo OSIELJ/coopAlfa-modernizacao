@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CoopAlfa.Api/CoopAlfa.Api.csproj" />
+  <Project Path="CoopAlfa.Tests/CoopAlfa.Tests.csproj" />
+</Solution>
