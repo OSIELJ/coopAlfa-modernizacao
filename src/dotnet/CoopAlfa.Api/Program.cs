@@ -15,7 +15,7 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Registra o serviço que faz P/Invoke para o COBOL
-builder.Services.AddScoped<ClienteService>();
+builder.Services.AddScoped<IClienteService, ClienteService>();
 
 // Permite que a interface HTML seja servida pela própria API
 builder.Services.AddCors(options =>

@@ -7,7 +7,7 @@ namespace CoopAlfa.Api.Services;
 /// Serviço que integra a camada .NET ao núcleo COBOL via P/Invoke.
 /// Traduz chamadas REST em operações no arquivo indexado legado.
 /// </summary>
-public class ClienteService
+public class ClienteService : IClienteService
 {
     // P/Invoke — importa a função do CLICORE.dll compilada pelo GnuCOBOL
     [DllImport("CLICORE.dll", EntryPoint = "CLICORE")]
