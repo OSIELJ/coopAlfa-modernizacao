@@ -1,0 +1,32 @@
+name: CI - Build e Testes
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  build:
+    name: Build e Testes
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Build
+        run: dotnet build src/dotnet/CoopAlfa.slnx
+
+      - name: Testes xUnit
+        run: dotnet test src/dotnet/CoopAlfa.slnx --no-build
