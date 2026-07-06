@@ -11,6 +11,17 @@ public class ClientesController : ControllerBase
 {
     private readonly IClienteService _service;
 
+    // Regex compilados com timeout — boa prática recomendada pelo SonarQube
+    private static readonly Regex TelefoneRegex = new(
+        @"^\(\d{2}\) \d{4,5}-\d{4}$",
+        RegexOptions.None,
+        TimeSpan.FromSeconds(1));
+
+    private static readonly Regex EmailRegex = new(
+        @"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+        RegexOptions.None,
+        TimeSpan.FromSeconds(1));
+
     public ClientesController(IClienteService service)
     {
         _service = service;
@@ -54,21 +65,15 @@ public class ClientesController : ControllerBase
             return BadRequest(ApiResponse<ClienteModel>.Erro(
                 "Código inválido. Deve ser um número entre 1 e 9999."));
 
-        if (!string.IsNullOrEmpty(request.Telefone))
-        {
-            var telRegex = @"^\(\d{2}\) \d{4,5}-\d{4}$";
-            if (!Regex.IsMatch(request.Telefone, telRegex))
-                return BadRequest(ApiResponse<ClienteModel>.Erro(
-                    "Telefone inválido. Use o formato (XX) XXXXX-XXXX."));
-        }
+        // Validação de telefone — if mesclado conforme recomendação SonarQube S1066
+        if (!string.IsNullOrEmpty(request.Telefone) && !TelefoneRegex.IsMatch(request.Telefone))
+            return BadRequest(ApiResponse<ClienteModel>.Erro(
+                "Telefone inválido. Use o formato (XX) XXXXX-XXXX."));
 
-        if (!string.IsNullOrEmpty(request.Email))
-        {
-            var emailRegex = @"^[^@\s]+@[^@\s]+\.[^@\s]+$";
-            if (!Regex.IsMatch(request.Email, emailRegex))
-                return BadRequest(ApiResponse<ClienteModel>.Erro(
-                    "E-mail inválido."));
-        }
+        // Validação de e-mail — if mesclado conforme recomendação SonarQube S1066
+        if (!string.IsNullOrEmpty(request.Email) && !EmailRegex.IsMatch(request.Email))
+            return BadRequest(ApiResponse<ClienteModel>.Erro(
+                "E-mail inválido."));
 
         var (sucesso, mensagem) = _service.Atualizar(
             codigo, request.Telefone, request.Email);
