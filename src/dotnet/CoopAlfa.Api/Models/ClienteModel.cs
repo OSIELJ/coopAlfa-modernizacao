@@ -2,7 +2,6 @@ namespace CoopAlfa.Api.Models;
 
 /// <summary>
 /// Representa os dados de um cliente na camada da API.
-/// Usado como entrada e saída dos endpoints REST.
 /// </summary>
 public class ClienteModel
 {
@@ -13,8 +12,18 @@ public class ClienteModel
 }
 
 /// <summary>
+/// Dados para cadastro de um novo cliente.
+/// </summary>
+public class CadastrarClienteRequest
+{
+    public int Codigo { get; set; }
+    public string Nome { get; set; } = string.Empty;
+    public string Telefone { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// Dados permitidos para atualização — apenas telefone e e-mail.
-/// Código e nome não podem ser alterados pelo atendente.
 /// </summary>
 public class AtualizarContatoRequest
 {

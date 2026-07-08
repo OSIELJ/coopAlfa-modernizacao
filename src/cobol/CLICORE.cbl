@@ -5,8 +5,15 @@
       * Arquitetura: processo separado                                 *
       * Le a requisicao de REQUEST.DAT, processa, grava RESPONSE.DAT   *
       *                                                                *
-      * Operacoes: C = Consultar, A = Atualizar                        *
-      * Return codes: 00 = Sucesso, 01 = Nao encontrado, 02 = Erro     *
+      * Operacoes:                                                     *
+      *   C = Consultar cliente pelo codigo                            *
+      *   N = Cadastrar novo cliente                                   *
+      *   A = Atualizar telefone e e-mail                              *
+      *                                                                *
+      * Return codes:                                                  *
+      *   00 = Sucesso                                                 *
+      *   01 = Nao encontrado / Codigo ja existe                       *
+      *   02 = Erro interno                                            *
       *================================================================*
        IDENTIFICATION DIVISION.
        PROGRAM-ID. CLICORE.
@@ -56,10 +63,12 @@
        01 WS-REQUEST.
            05 WS-OPERACAO          PIC X(01).
               88 OP-CONSULTAR      VALUE 'C'.
+              88 OP-NOVO           VALUE 'N'.
               88 OP-ATUALIZAR      VALUE 'A'.
            05 WS-CODIGO            PIC 9(04).
-           05 WS-TELEFONE          PIC X(15).
-           05 WS-EMAIL             PIC X(50).
+           05 WS-NOME-REQ          PIC X(40).
+           05 WS-TELEFONE-REQ      PIC X(15).
+           05 WS-EMAIL-REQ         PIC X(50).
 
       * Estrutura da resposta (saida)
        01 WS-RESPONSE.
@@ -75,17 +84,20 @@
            EVALUATE TRUE
                WHEN OP-CONSULTAR
                    PERFORM CONSULTAR-CLIENTE
+               WHEN OP-NOVO
+                   PERFORM CADASTRAR-CLIENTE
                WHEN OP-ATUALIZAR
                    PERFORM ATUALIZAR-CLIENTE
                WHEN OTHER
                    MOVE '02' TO WS-RETURN-CODE
-                   MOVE 'Operacao invalida' TO WS-MENSAGEM
+                   MOVE 'Operacao invalida'
+                       TO WS-MENSAGEM
            END-EVALUATE
            PERFORM GRAVAR-RESPONSE
            STOP RUN.
 
       *----------------------------------------------------------------*
-      * LER-REQUEST - le a requisicao do arquivo de entrada            *
+      * LER-REQUEST                                                    *
       *----------------------------------------------------------------*
        LER-REQUEST.
            INITIALIZE WS-REQUEST
@@ -95,10 +107,11 @@
                AT END
                    MOVE '02' TO WS-RETURN-CODE
            END-READ
-           MOVE REGISTRO-REQUEST(1:1)  TO WS-OPERACAO
-           MOVE REGISTRO-REQUEST(2:4)  TO WS-CODIGO
-           MOVE REGISTRO-REQUEST(6:15) TO WS-TELEFONE
-           MOVE REGISTRO-REQUEST(21:50) TO WS-EMAIL
+           MOVE REGISTRO-REQUEST(1:1)   TO WS-OPERACAO
+           MOVE REGISTRO-REQUEST(2:4)   TO WS-CODIGO
+           MOVE REGISTRO-REQUEST(6:40)  TO WS-NOME-REQ
+           MOVE REGISTRO-REQUEST(46:15) TO WS-TELEFONE-REQ
+           MOVE REGISTRO-REQUEST(61:50) TO WS-EMAIL-REQ
            CLOSE ARQUIVO-REQUEST.
 
       *----------------------------------------------------------------*
@@ -123,6 +136,30 @@
            CLOSE ARQUIVO-CLIENTES.
 
       *----------------------------------------------------------------*
+      * CADASTRAR-CLIENTE                                              *
+      *----------------------------------------------------------------*
+       CADASTRAR-CLIENTE.
+           OPEN I-O ARQUIVO-CLIENTES
+           MOVE WS-CODIGO       TO ARQ-CODIGO
+           MOVE WS-NOME-REQ     TO ARQ-NOME
+           MOVE WS-TELEFONE-REQ TO ARQ-TELEFONE
+           MOVE WS-EMAIL-REQ    TO ARQ-EMAIL
+           WRITE REGISTRO-CLIENTE
+               INVALID KEY
+                   MOVE '01' TO WS-RETURN-CODE
+                   MOVE 'Codigo ja cadastrado'
+                       TO WS-MENSAGEM
+               NOT INVALID KEY
+                   MOVE ARQ-NOME      TO WS-NOME
+                   MOVE ARQ-TELEFONE  TO WS-TEL-OUT
+                   MOVE ARQ-EMAIL     TO WS-EMAIL-OUT
+                   MOVE '00'          TO WS-RETURN-CODE
+                   MOVE 'Cliente cadastrado com sucesso'
+                       TO WS-MENSAGEM
+           END-WRITE
+           CLOSE ARQUIVO-CLIENTES.
+
+      *----------------------------------------------------------------*
       * ATUALIZAR-CLIENTE                                              *
       *----------------------------------------------------------------*
        ATUALIZAR-CLIENTE.
@@ -134,8 +171,8 @@
                    MOVE 'Cliente nao encontrado'
                        TO WS-MENSAGEM
                NOT INVALID KEY
-                   MOVE WS-TELEFONE TO ARQ-TELEFONE
-                   MOVE WS-EMAIL    TO ARQ-EMAIL
+                   MOVE WS-TELEFONE-REQ TO ARQ-TELEFONE
+                   MOVE WS-EMAIL-REQ    TO ARQ-EMAIL
                    REWRITE REGISTRO-CLIENTE
                        INVALID KEY
                            MOVE '02' TO WS-RETURN-CODE
@@ -153,7 +190,7 @@
            CLOSE ARQUIVO-CLIENTES.
 
       *----------------------------------------------------------------*
-      * GRAVAR-RESPONSE - grava a resposta no arquivo de saida         *
+      * GRAVAR-RESPONSE                                                *
       *----------------------------------------------------------------*
        GRAVAR-RESPONSE.
            MOVE SPACES TO REGISTRO-RESPONSE
