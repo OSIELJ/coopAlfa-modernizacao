@@ -13,7 +13,7 @@ Utilizado via interface web em https://claude.ai em momentos específicos do des
 
 ## 2. Postura Adotada
 
-A IA **não foi utilizada para conduzir o projeto**. O desenvolvimento foi realizado de forma autônoma — estudo dos conceitos, tomada de decisões arquiteturais e implementação do código. A IA foi acionada em momentos pontuais: para aprofundar discussões já iniciadas, depurar erros específicos e validar decisões já tomadas.
+A IA foi acionada em momentos pontuais: para aprofundar discussões já iniciadas, depurar erros específicos e validar decisões já tomadas.
 
 ---
 
@@ -94,43 +94,6 @@ A explicação sobre ReDoS foi o ponto mais valioso. Não era um conhecimento pr
 
 **Impacto no projeto:**
 Ambas as correções aplicadas. Quality Gate passou de 2 Code Smells para 0.
-
----
-
-### Prompt 5 — Geração dos Testes xUnit
-
-**Objetivo:** Criar testes isolados do COBOL.
-
-**Prompt utilizado:**
-> "Preciso de testes xUnit para o ClientesController sem depender do COBOL. Como isolar a lógica de negócio do processo externo?"
-
-**Resposta obtida:**
-Sugeriu extrair `IClienteService`, usar `Mock<IClienteService>` do Moq nos testes, e registrar a interface no DI. Gerou 18 casos de teste cobrindo todos os cenários.
-
-**Análise crítica:**
-Abordagem correta e padrão da indústria. A IA usou `[Theory]` com `[InlineData]` para múltiplos valores inválidos sem ser solicitada — boa decisão autônoma. Não mencionou que o construtor do Controller precisaria ser atualizado para usar a interface — descoberto na compilação.
-
-**Impacto no projeto:**
-18 testes implementados, todos passando.
-
----
-
-### Prompt 6 — Decisão de Mudar para Processo Separado
-
-**Contexto:**
-Após várias tentativas de P/Invoke com GnuCOBOL (BadImageFormatException 32/64 bits, Access Violation 0xC0000005 com struct e IntPtr), a abordagem precisou ser revisada.
-
-**Prompt utilizado:**
-> "O P/Invoke com GnuCOBOL no Windows continua falhando com Access Violation mesmo com IntPtr e byte arrays. Quais são as alternativas reais para integrar .NET e COBOL sem P/Invoke? Qual é mais usada no mercado e mais fiel ao padrão mainframe?"
-
-**Resposta obtida:**
-A IA apresentou a alternativa de processo separado com troca de dados por arquivo. Explicou que esse padrão é o mais fiel ao mainframe real — no z/OS, sistemas legados são integrados via jobs batch que leem e gravam datasets, não via chamadas in-process. O P/Invoke seria adequado para COBOL compilado em ambiente controlado, mas o processo separado representa melhor o comportamento de um sistema legado real.
-
-**Análise crítica:**
-Esta foi a interação mais importante do projeto. A IA não apenas sugeriu uma alternativa técnica — ela reencuadrou a mudança como uma **decisão arquitetural mais adequada ao cenário**, não como uma limitação. O argumento de que "no mainframe real a integração é feita por datasets, não por chamadas in-process" é defensável e alinhado com o que o treinamento cobriu. Transformou uma dificuldade técnica em uma escolha consciente e justificável.
-
-**Impacto no projeto:**
-Mudança para processo separado adotada. CLICORE reescrito para ler `REQUEST.DAT` e gravar `RESPONSE.DAT`. Sistema funcionando end-to-end: navegador → API .NET → CLICORE.exe → CLIENTES.DAT → resposta.
 
 ---
 
