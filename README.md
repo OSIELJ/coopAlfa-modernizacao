@@ -9,13 +9,14 @@ O sistema expõe um núcleo COBOL legado como API REST em .NET, permitindo que a
 ## Demonstração
 
 ### Consultar Cliente
-![Consultar Cliente](docs/gifs/CoopAlfa___consulta_cliente.gif)
+<img width="708" height="380" alt="CoopAlfa — consulta_cliente" src="https://github.com/user-attachments/assets/73b35b41-75c4-4295-85a9-9b5f4775bf89" />
 
 ### Criar Cliente
-![Criar Cliente](docs/gifs/CoopAlfa___criar_cliente.gif)
+<img width="708" height="380" alt="CoopAlfa — criar_cliente" src="https://github.com/user-attachments/assets/3642c66d-b001-4075-ba4b-eb918495ba0e" />
 
 ### Editar Contato
-![Editar Contato](docs/gifs/CoopAlfa___editar_cliente.gif)
+<img width="708" height="380" alt="CoopAlfa — editar_cliente" src="https://github.com/user-attachments/assets/ed5d2ea1-297b-4094-8f9a-4c59aea90714" />
+
 
 ---
 
