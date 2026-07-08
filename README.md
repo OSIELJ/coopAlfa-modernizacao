@@ -9,13 +9,16 @@ O sistema expõe um núcleo COBOL legado como API REST em .NET, permitindo que a
 ## Demonstração
 
 ### Consultar Cliente
-<img width="708" height="380" alt="CoopAlfa — consulta_cliente" src="https://github.com/user-attachments/assets/73b35b41-75c4-4295-85a9-9b5f4775bf89" />
+
+<img width="708" height="380" alt="CoopAlfa — consulta_cliente" src="https://github.com/user-attachments/assets/22bc0efb-fea7-427e-a8db-8da711e8c7f6" />
 
 ### Criar Cliente
-<img width="708" height="380" alt="CoopAlfa — criar_cliente" src="https://github.com/user-attachments/assets/3642c66d-b001-4075-ba4b-eb918495ba0e" />
+
+<img width="708" height="380" alt="CoopAlfa — criar_cliente" src="https://github.com/user-attachments/assets/d885dfd9-aec6-45a3-adac-f94902d1f3cf" />
 
 ### Editar Contato
-<img width="708" height="380" alt="CoopAlfa — editar_cliente" src="https://github.com/user-attachments/assets/ed5d2ea1-297b-4094-8f9a-4c59aea90714" />
+
+<img width="708" height="380" alt="CoopAlfa — editar_cliente" src="https://github.com/user-attachments/assets/5d9be405-d4f6-4646-9471-acc439bd28d5" />
 
 
 ---
@@ -35,6 +38,22 @@ Interface HTML (atendente)
 O .NET grava a requisição em `REQUEST.DAT`, executa o `CLICORE.exe`, e lê a resposta de `RESPONSE.DAT`. Este padrão reproduz a integração batch com mainframe legado, onde aplicações consumidoras interagem com o COBOL através de datasets.
 
 Detalhes completos em [`docs/arquitetura.md`](docs/arquitetura.md).
+
+---
+
+## Evidências de Funcionamento
+
+### API retornando JSON (navegador)
+
+<img width="1605" height="229" alt="Captura de tela 2026-07-08 184057" src="https://github.com/user-attachments/assets/c36b339c-05b2-4b51-8103-fc4c38bef73b" />
+
+### Swagger — GET /api/clientes/1001
+
+<img width="1919" height="1032" alt="Captura de tela 2026-07-08 183844" src="https://github.com/user-attachments/assets/35c24634-bb91-46a0-8c0a-e43348ef5ba5" />
+
+### Interface — cliente não encontrado
+
+<img width="1919" height="1029" alt="Captura de tela 2026-07-08 185051" src="https://github.com/user-attachments/assets/807227f1-777c-4724-a8c7-3542c37ada7d" />
 
 ---
 
