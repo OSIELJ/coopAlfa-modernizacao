@@ -14,9 +14,11 @@ O objetivo deste projeto **não é substituir o sistema legado**, mas sim expô-
 
 ## 2. Arquitetura Escolhida
 
-### Padrão: API Gateway sobre Núcleo Legado
+### Padrão: Integração por Processo Separado sobre Núcleo Legado
 
 A solução adota o padrão de modernização **Strangler Fig**, onde o sistema legado é encapsulado por uma camada moderna sem ser substituído. O COBOL permanece como núcleo de processamento e persistência, enquanto o .NET expõe suas funcionalidades como uma API REST.
+
+A comunicação entre .NET e COBOL é feita via **processo separado com troca de dados por arquivo** — reproduzindo fielmente o padrão de integração batch do mainframe, onde aplicações consumidoras interagem com o legado COBOL através de datasets.
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -34,21 +36,24 @@ A solução adota o padrão de modernização **Strangler Fig**, onde o sistema 
 │  └──────────────────┬──────────────────────────┘    │
 │  ┌──────────────────▼──────────────────────────┐    │
 │  │           ClienteService                    │    │
-│  │         (P/Invoke → COBOL)                  │    │
+│  │  1. Grava REQUEST.DAT                       │    │
+│  │  2. Executa CLICORE.exe                     │    │
+│  │  3. Lê RESPONSE.DAT                         │    │
 │  └──────────────────┬──────────────────────────┘    │
 └─────────────────────┼───────────────────────────────┘
-                      │ P/Invoke (chamada direta à DLL)
+                      │ Process.Start()
 ┌─────────────────────▼───────────────────────────────┐
-│                  CLICORE.dll                         │
-│            (GnuCOBOL - Núcleo Legado)                │
+│                 CLICORE.exe                          │
+│            (GnuCOBOL 3.2 64 bits)                   │
 │                                                      │
-│  Operação C → Consulta no arquivo indexado           │
-│  Operação A → Atualização no arquivo indexado        │
+│  1. Lê REQUEST.DAT  (operação + código + dados)      │
+│  2. Processa no arquivo indexado CLIENTES.DAT        │
+│  3. Grava RESPONSE.DAT (return code + dados)         │
 └──────────────────────┬──────────────────────────────┘
                        │ I/O
 ┌──────────────────────▼──────────────────────────────┐
 │                 CLIENTES.DAT                         │
-│          (Arquivo Indexado - Persistência)           │
+│     (Arquivo Indexado Berkeley DB - Persistência)    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -58,43 +63,35 @@ A solução adota o padrão de modernização **Strangler Fig**, onde o sistema 
 
 ### 3.1 Núcleo COBOL — CLICORE.cbl
 
-Responsável por toda a lógica de negócio e persistência dos dados cadastrais. Compilado como módulo (`.dll`) pelo GnuCOBOL, é chamado diretamente pelo .NET via P/Invoke.
+Responsável por toda a lógica de negócio e persistência dos dados cadastrais. Compilado como executável pelo GnuCOBOL 3.2 64 bits.
 
 **Responsabilidades:**
-- Ler registros do arquivo indexado `CLIENTES.DAT`
-- Gravar atualizações de contato no arquivo indexado
-- Retornar return codes padronizados para o .NET
+- Ler a requisição do arquivo `REQUEST.DAT`
+- Processar no arquivo indexado `CLIENTES.DAT`
+- Gravar a resposta em `RESPONSE.DAT`
 
-**Operações suportadas:**
+**Layout do REQUEST.DAT:**
 
-| Código | Operação |
-|--------|----------|
-| `C` | Consultar cliente pelo código |
-| `A` | Atualizar telefone e e-mail |
+| Campo | Posição | Tamanho | Descrição |
+|-------|---------|---------|-----------|
+| Operação | 1 | 1 | C=Consultar, A=Atualizar |
+| Código | 2-5 | 4 | Código do cliente (numérico) |
+| Telefone | 6-20 | 15 | Telefone para atualização |
+| E-mail | 21-70 | 50 | E-mail para atualização |
 
-**Return codes:**
+**Layout do RESPONSE.DAT:**
 
-| Código | Significado |
-|--------|-------------|
-| `00` | Sucesso |
-| `01` | Cliente não encontrado |
-| `02` | Erro interno |
+| Campo | Posição | Tamanho | Descrição |
+|-------|---------|---------|-----------|
+| Return Code | 1-2 | 2 | 00=Sucesso, 01=Não encontrado, 02=Erro |
+| Nome | 3-42 | 40 | Nome do cliente |
+| Telefone | 43-57 | 15 | Telefone do cliente |
+| E-mail | 58-107 | 50 | E-mail do cliente |
+| Mensagem | 108-187 | 80 | Mensagem de retorno |
 
 ### 3.2 Copybook — CLIENTE.cpy
 
-Define a estrutura de dados compartilhada entre o COBOL e o .NET. É o **contrato único de dados** da solução — qualquer alteração na estrutura deve ser refletida nos dois lados simultaneamente.
-
-**Total: 192 bytes**
-
-| Campo | COBOL | C# | Bytes |
-|-------|-------|----|-------|
-| Operação | `PIC X(01)` | `string SizeConst=1` | 1 |
-| Código | `PIC 9(04)` | `string SizeConst=4` | 4 |
-| Nome | `PIC X(40)` | `string SizeConst=40` | 40 |
-| Telefone | `PIC X(15)` | `string SizeConst=15` | 15 |
-| E-mail | `PIC X(50)` | `string SizeConst=50` | 50 |
-| Return code | `PIC X(02)` | `string SizeConst=2` | 2 |
-| Mensagem | `PIC X(80)` | `string SizeConst=80` | 80 |
+Define a estrutura de dados compartilhada internamente pelo COBOL. É o **contrato de dados** que documenta o layout dos campos.
 
 ### 3.3 Web API REST — CoopAlfa.Api
 
@@ -110,45 +107,47 @@ Camada moderna em ASP.NET Core (.NET 10) que expõe o núcleo COBOL como serviç
 **Validações implementadas:**
 - Código entre 1 e 9999
 - Telefone no formato `(XX) XXXXX-XXXX` ou `(XX) XXXX-XXXX`
-- E-mail com formato válido
+- E-mail com formato válido (Regex com timeout — S6444)
 
 ### 3.4 Interface do Atendente — index.html
 
-Página HTML/JS servida pela própria API como arquivo estático (`wwwroot`). Consome os endpoints REST da mesma origem, provando na prática que a API é reutilizável.
-
-**Funcionalidades:**
-- Busca de cliente por código
-- Exibição de dados cadastrais
-- Edição de telefone e e-mail com máscara automática
-- Feedback visual de sucesso e erro
+Página HTML/JS servida pela própria API como arquivo estático (`wwwroot`). Consome os endpoints REST da mesma origem.
 
 ---
 
 ## 4. Decisões Técnicas e Justificativas
 
-### 4.1 Por que P/Invoke em vez de processo separado?
+### 4.1 Por que processo separado em vez de P/Invoke?
 
-O P/Invoke permite chamada **in-process** e síncrona ao COBOL, sem overhead de criação de processo. É equivalente ao papel do z/OS Connect no mainframe real — que também faz chamadas diretas ao programa COBOL sem criar subprocessos.
+A abordagem inicial prevista era P/Invoke (chamada direta à DLL do COBOL). Durante a implementação, foram identificados problemas de incompatibilidade entre o runtime do GnuCOBOL 32 bits (disponível no OpenCobolIDE) e o .NET 10 64 bits, além de problemas de marshalling de memória entre os dois runtimes.
 
-**Alternativa considerada:** Invocar o COBOL como executável separado via `Process.Start()`. Descartada por ser mais lenta e frágil (troca de dados por arquivo ou stdout).
+A decisão de usar processo separado com troca de dados por arquivo foi tomada pelos seguintes motivos:
+
+**Fidelidade ao cenário legado:** a Aline (cliente) descreveu o sistema atual como "dados em arquivos de difícil acesso". No mainframe real, a integração com sistemas legados COBOL é feita exatamente assim — submetendo jobs batch que leem e gravam datasets. O processo separado reproduz esse padrão fielmente.
+
+**Isolamento de runtimes:** cada processo tem seu próprio espaço de memória, eliminando os problemas de marshalling entre .NET e COBOL. Isso é mais robusto e previsível.
+
+**Portabilidade:** o COBOL pode ser substituído por qualquer implementação que leia `REQUEST.DAT` e escreva `RESPONSE.DAT`, sem alterar a API.
+
+**Alternativa considerada e descartada:** P/Invoke direto com CLICORE.dll. Descartado pelos problemas de compatibilidade 32/64 bits e Access Violation (0xC0000005) ao passar structs entre os runtimes.
 
 ### 4.2 Por que arquivo indexado em vez de DB2?
 
-O arquivo indexado (`ORGANIZATION IS INDEXED`) representa fielmente o ambiente legado descrito no cenário — *"dados em arquivos de difícil acesso"*. É o padrão VSAM do mainframe, simulado pelo GnuCOBOL.
+O arquivo indexado (`ORGANIZATION IS INDEXED`) representa fielmente o ambiente legado descrito no cenário. É o padrão VSAM do mainframe, simulado pelo GnuCOBOL.
 
-**DB2 foi considerado** e está disponível via Docker. A arquitetura foi desenhada para que o módulo de persistência seja substituível por `EXEC SQL` com DB2 sem alterar a API nem a copybook. Documentado como melhoria futura.
+**DB2 foi considerado** e está disponível via Docker. A arquitetura foi desenhada para que o módulo de persistência seja substituível por `EXEC SQL` com DB2 sem alterar a API. Documentado como melhoria futura.
 
 ### 4.3 Por que a interface é servida pela própria API?
 
-Serve dois propósitos: simplifica o deploy (um único processo) e **demonstra na prática** que a API é reutilizável — o atendente é apenas mais um cliente consumindo os endpoints REST, exatamente como qualquer aplicação futura faria.
+Serve dois propósitos: simplifica o deploy (um único processo) e **demonstra na prática** que a API é reutilizável — o atendente é apenas mais um cliente consumindo os endpoints REST.
 
-### 4.4 Por que IClienteService (interface) em vez de ClienteService diretamente?
+### 4.4 Por que IClienteService (interface)?
 
-Permite **injeção de dependência** e mock nos testes xUnit sem depender do COBOL/P/Invoke. Segue o princípio de inversão de dependência (SOLID), tornando a solução testável e extensível.
+Permite injeção de dependência e mock nos testes xUnit sem depender do COBOL. Segue o princípio de inversão de dependência (SOLID).
 
 ### 4.5 CORS permissivo no ambiente de desenvolvimento
 
-O `AllowAnyOrigin()` foi mantido para facilitar o desenvolvimento e demonstração. Em produção, seria substituído por política restrita com origens específicas permitidas. Identificado pelo SonarQube (S5122) e documentado como decisão consciente.
+O `AllowAnyOrigin()` foi mantido para facilitar o desenvolvimento. Em produção, seria substituído por política restrita. Identificado pelo SonarQube (S5122) e documentado como decisão consciente.
 
 ---
 
@@ -159,25 +158,25 @@ O `AllowAnyOrigin()` foi mantido para facilitar o desenvolvimento e demonstraç�
 1. Atendente digita o código e clica "Buscar"
 2. HTML/JS envia GET /api/clientes/{codigo}
 3. ClientesController valida o código (1-9999)
-4. ClienteService monta o ClienteStruct com Operacao='C'
-5. P/Invoke chama CLICORE.dll
-6. COBOL abre CLIENTES.DAT, busca pelo ARQ-CODIGO
-7. COBOL retorna RC='00' (sucesso) ou RC='01' (não encontrado)
-8. ClienteService converte o struct em ClienteModel
+4. ClienteService grava REQUEST.DAT: "C1001..."
+5. ClienteService executa CLICORE.exe
+6. CLICORE lê REQUEST.DAT, busca no CLIENTES.DAT
+7. CLICORE grava RESPONSE.DAT: "00Maria Silva..."
+8. ClienteService lê RESPONSE.DAT e monta ClienteModel
 9. Controller retorna 200 OK ou 404 Not Found
-10. Interface exibe os dados ou mensagem de erro
+10. Interface exibe os dados do cliente
 ```
 
 ### Atualização de contato
 ```
 1. Atendente edita telefone/e-mail e clica "Salvar"
-2. HTML/JS valida formato localmente (máscara + regex)
+2. HTML/JS valida formato localmente
 3. HTML/JS envia PUT /api/clientes/{codigo}/contato
-4. Controller valida telefone e e-mail (regex com timeout)
-5. ClienteService monta o ClienteStruct com Operacao='A'
-6. P/Invoke chama CLICORE.dll
-7. COBOL lê o registro, atualiza telefone e e-mail, faz REWRITE
-8. COBOL retorna RC='00' (sucesso) ou RC='01' (não encontrado)
+4. Controller valida telefone e e-mail (Regex com timeout)
+5. ClienteService grava REQUEST.DAT: "A1001(11)98888..."
+6. ClienteService executa CLICORE.exe
+7. CLICORE lê REQUEST.DAT, atualiza CLIENTES.DAT (REWRITE)
+8. CLICORE grava RESPONSE.DAT: "00Maria Silva..."
 9. Controller retorna 200 OK com dados atualizados
 10. Interface exibe confirmação de sucesso
 ```
@@ -193,17 +192,13 @@ Análise estática do código C# via SonarQube Community 9.9.8 (Docker local).
 - Bugs: 0 (Rating A)
 - Vulnerabilities: 0 (Rating A)
 - Code Smells: 0 (Rating A)
-- Duplications: 0%
 - Quality Gate: **Passed**
 
 ### GitHub Actions (CI/CD)
-Pipeline configurado em `.github/workflows/build.yml`. Executa automaticamente a cada push nas branches `main` e `dev`.
-
-**Etapas do pipeline:**
-1. Checkout do código
-2. Setup .NET 10
-3. Build da solution
-4. Execução dos 18 testes xUnit
+Pipeline configurado em `.github/workflows/build.yml`. Executa automaticamente a cada push nas branches `main` e `dev`:
+1. Setup .NET 10
+2. Build da solution
+3. Execução dos 18 testes xUnit
 
 ---
 
@@ -211,38 +206,30 @@ Pipeline configurado em `.github/workflows/build.yml`. Executa automaticamente a
 
 ```
 coopAlfa-modernizacao/
-├── .github/workflows/
-│   └── build.yml              ← CI/CD GitHub Actions
-├── src/
-│   ├── cobol/
-│   │   ├── copybook/
-│   │   │   └── CLIENTE.cpy    ← Contrato único de dados
-│   │   ├── build/
-│   │   │   └── CLICORE.dll    ← Núcleo COBOL compilado
-│   │   └── CLICORE.cbl        ← Código-fonte COBOL
-│   └── dotnet/
-│       ├── CoopAlfa.Api/
-│       │   ├── Controllers/   ← Endpoints REST
-│       │   ├── Models/        ← DTOs
-│       │   ├── Services/      ← P/Invoke para COBOL
-│       │   ├── wwwroot/       ← Interface do atendente
-│       │   └── ClienteStruct.cs ← Espelho da copybook
-│       └── CoopAlfa.Tests/
-│           └── ClientesControllerTests.cs ← 18 testes
-├── docs/
-│   ├── arquitetura.md         ← Este documento
-│   ├── plano-de-testes.md
-│   └── relatorio-ia.md
-├── build.cmd                  ← Script de build do COBOL
-└── README.md
+├── src/cobol/
+│   ├── copybook/CLIENTE.cpy       ← Contrato de dados
+│   ├── build/CLICORE.exe          ← Núcleo COBOL compilado
+│   ├── build/CLIENTES.DAT         ← Arquivo indexado legado
+│   ├── CLICORE.cbl                ← Código-fonte COBOL
+│   └── CLISEED.cbl                ← Populador de dados
+├── src/dotnet/
+│   ├── CoopAlfa.Api/
+│   │   ├── Controllers/           ← Endpoints REST
+│   │   ├── Models/                ← DTOs
+│   │   ├── Services/              ← Integração COBOL
+│   │   ├── cobol/                 ← Runtime COBOL
+│   │   └── wwwroot/index.html     ← Interface do atendente
+│   └── CoopAlfa.Tests/            ← 18 testes xUnit
+├── docs/                          ← Documentação
+└── .github/workflows/build.yml    ← CI/CD
 ```
 
 ---
 
 ## 8. Melhorias Futuras
 
-- **DB2 como persistência:** substituir o arquivo indexado por EXEC SQL com DB2, mantendo a copybook como contrato. Infraestrutura já disponível via Docker.
-- **SonarCloud:** migrar análise para SonarCloud (plano gratuito até 50k LOC) para integração nativa com GitHub Actions.
-- **Cadastro e exclusão de clientes:** operações adicionais já previstas na arquitetura do CLICORE (parâmetro de operação extensível).
-- **Autenticação:** adicionar JWT na API para controle de acesso dos atendentes.
-- **z/OS Connect:** em ambiente mainframe real, o papel do ClienteService seria assumido pelo z/OS Connect, sem alterar a copybook nem a lógica de negócio do COBOL.
+- **DB2 como persistência:** substituir o arquivo indexado por EXEC SQL com DB2
+- **Cadastro e exclusão:** operações adicionais já previstas na arquitetura do CLICORE
+- **SonarCloud:** migrar análise para SonarCloud para integração nativa com GitHub Actions
+- **Autenticação:** adicionar JWT na API para controle de acesso
+- **z/OS Connect:** em ambiente mainframe real, o papel do ClienteService seria assumido pelo z/OS Connect

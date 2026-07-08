@@ -2,14 +2,11 @@
       * CLICORE.CBL - Nucleo legado de cadastro de clientes            *
       * Cooperativa Financeira Alfa - Projeto de Modernizacao          *
       *                                                                *
-      * Operacoes suportadas:                                          *
-      *   C = Consultar cliente pelo codigo                            *
-      *   A = Atualizar telefone e e-mail do cliente                   *
+      * Arquitetura: processo separado                                 *
+      * Le a requisicao de REQUEST.DAT, processa, grava RESPONSE.DAT   *
       *                                                                *
-      * Return codes:                                                  *
-      *   00 = Sucesso                                                 *
-      *   01 = Cliente nao encontrado                                  *
-      *   02 = Erro interno                                            *
+      * Operacoes: C = Consultar, A = Atualizar                        *
+      * Return codes: 00 = Sucesso, 01 = Nao encontrado, 02 = Erro     *
       *================================================================*
        IDENTIFICATION DIVISION.
        PROGRAM-ID. CLICORE.
@@ -25,6 +22,16 @@
                RECORD KEY IS ARQ-CODIGO
                FILE STATUS IS WS-FILE-STATUS.
 
+           SELECT ARQUIVO-REQUEST
+               ASSIGN TO "REQUEST.DAT"
+               ORGANIZATION IS LINE SEQUENTIAL
+               FILE STATUS IS WS-REQ-STATUS.
+
+           SELECT ARQUIVO-RESPONSE
+               ASSIGN TO "RESPONSE.DAT"
+               ORGANIZATION IS LINE SEQUENTIAL
+               FILE STATUS IS WS-RESP-STATUS.
+
        DATA DIVISION.
        FILE SECTION.
        FD ARQUIVO-CLIENTES.
@@ -34,16 +41,37 @@
            05 ARQ-TELEFONE         PIC X(15).
            05 ARQ-EMAIL            PIC X(50).
 
+       FD ARQUIVO-REQUEST.
+       01 REGISTRO-REQUEST         PIC X(200).
+
+       FD ARQUIVO-RESPONSE.
+       01 REGISTRO-RESPONSE        PIC X(200).
+
        WORKING-STORAGE SECTION.
        01 WS-FILE-STATUS           PIC X(02).
-          88 FS-SUCESSO            VALUE '00'.
-          88 FS-NAO-ENCONTRADO     VALUE '23'.
-          88 FS-FIM-ARQUIVO        VALUE '10'.
+       01 WS-REQ-STATUS            PIC X(02).
+       01 WS-RESP-STATUS           PIC X(02).
 
-       COPY "CLIENTE.cpy".
+      * Estrutura da requisicao (entrada)
+       01 WS-REQUEST.
+           05 WS-OPERACAO          PIC X(01).
+              88 OP-CONSULTAR      VALUE 'C'.
+              88 OP-ATUALIZAR      VALUE 'A'.
+           05 WS-CODIGO            PIC 9(04).
+           05 WS-TELEFONE          PIC X(15).
+           05 WS-EMAIL             PIC X(50).
+
+      * Estrutura da resposta (saida)
+       01 WS-RESPONSE.
+           05 WS-RETURN-CODE       PIC X(02).
+           05 WS-NOME              PIC X(40).
+           05 WS-TEL-OUT           PIC X(15).
+           05 WS-EMAIL-OUT         PIC X(50).
+           05 WS-MENSAGEM          PIC X(80).
 
        PROCEDURE DIVISION.
        INICIO.
+           PERFORM LER-REQUEST
            EVALUATE TRUE
                WHEN OP-CONSULTAR
                    PERFORM CONSULTAR-CLIENTE
@@ -51,14 +79,30 @@
                    PERFORM ATUALIZAR-CLIENTE
                WHEN OTHER
                    MOVE '02' TO WS-RETURN-CODE
-                   MOVE 'Operacao invalida'
-                       TO WS-MENSAGEM
+                   MOVE 'Operacao invalida' TO WS-MENSAGEM
            END-EVALUATE
+           PERFORM GRAVAR-RESPONSE
            STOP RUN.
 
       *----------------------------------------------------------------*
+      * LER-REQUEST - le a requisicao do arquivo de entrada            *
+      *----------------------------------------------------------------*
+       LER-REQUEST.
+           INITIALIZE WS-REQUEST
+           INITIALIZE WS-RESPONSE
+           OPEN INPUT ARQUIVO-REQUEST
+           READ ARQUIVO-REQUEST
+               AT END
+                   MOVE '02' TO WS-RETURN-CODE
+           END-READ
+           MOVE REGISTRO-REQUEST(1:1)  TO WS-OPERACAO
+           MOVE REGISTRO-REQUEST(2:4)  TO WS-CODIGO
+           MOVE REGISTRO-REQUEST(6:15) TO WS-TELEFONE
+           MOVE REGISTRO-REQUEST(21:50) TO WS-EMAIL
+           CLOSE ARQUIVO-REQUEST.
+
+      *----------------------------------------------------------------*
       * CONSULTAR-CLIENTE                                              *
-      * Le o registro do arquivo pelo codigo e devolve os dados        *
       *----------------------------------------------------------------*
        CONSULTAR-CLIENTE.
            OPEN INPUT ARQUIVO-CLIENTES
@@ -70,8 +114,8 @@
                        TO WS-MENSAGEM
                NOT INVALID KEY
                    MOVE ARQ-NOME      TO WS-NOME
-                   MOVE ARQ-TELEFONE  TO WS-TELEFONE
-                   MOVE ARQ-EMAIL     TO WS-EMAIL
+                   MOVE ARQ-TELEFONE  TO WS-TEL-OUT
+                   MOVE ARQ-EMAIL     TO WS-EMAIL-OUT
                    MOVE '00'          TO WS-RETURN-CODE
                    MOVE 'Consulta realizada com sucesso'
                        TO WS-MENSAGEM
@@ -80,7 +124,6 @@
 
       *----------------------------------------------------------------*
       * ATUALIZAR-CLIENTE                                              *
-      * Atualiza telefone e e-mail mantendo os demais dados intactos   *
       *----------------------------------------------------------------*
        ATUALIZAR-CLIENTE.
            OPEN I-O ARQUIVO-CLIENTES
@@ -96,12 +139,33 @@
                    REWRITE REGISTRO-CLIENTE
                        INVALID KEY
                            MOVE '02' TO WS-RETURN-CODE
-                           MOVE 'Erro ao atualizar cliente'
+                           MOVE 'Erro ao atualizar'
                                TO WS-MENSAGEM
                        NOT INVALID KEY
+                           MOVE ARQ-NOME     TO WS-NOME
+                           MOVE ARQ-TELEFONE TO WS-TEL-OUT
+                           MOVE ARQ-EMAIL    TO WS-EMAIL-OUT
                            MOVE '00' TO WS-RETURN-CODE
                            MOVE 'Atualizacao realizada'
                                TO WS-MENSAGEM
                    END-REWRITE
            END-READ
            CLOSE ARQUIVO-CLIENTES.
+
+      *----------------------------------------------------------------*
+      * GRAVAR-RESPONSE - grava a resposta no arquivo de saida         *
+      *----------------------------------------------------------------*
+       GRAVAR-RESPONSE.
+           MOVE SPACES TO REGISTRO-RESPONSE
+           STRING
+               WS-RETURN-CODE
+               WS-NOME
+               WS-TEL-OUT
+               WS-EMAIL-OUT
+               WS-MENSAGEM
+               DELIMITED BY SIZE
+               INTO REGISTRO-RESPONSE
+           END-STRING
+           OPEN OUTPUT ARQUIVO-RESPONSE
+           WRITE REGISTRO-RESPONSE
+           CLOSE ARQUIVO-RESPONSE.

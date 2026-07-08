@@ -7,13 +7,13 @@
 ## 1. Ferramenta Utilizada
 
 **Claude (Anthropic) — Claude Sonnet 4.6**
-Utilizado via interface web em https://claude.ai em momentos específicos do desenvolvimento, conforme descrito abaixo.
+Utilizado via interface web em https://claude.ai em momentos específicos do desenvolvimento.
 
 ---
 
 ## 2. Postura Adotada
 
-O desenvolvimento foi realizado de forma autônoma — estudo dos conceitos, tomada de decisões arquiteturais e implementação do código. A IA foi acionada em momentos pontuais: para aprofundar discussões arquiteturais já iniciadas, depurar erros específicos e validar decisões já tomadas.
+A IA **não foi utilizada para conduzir o projeto**. O desenvolvimento foi realizado de forma autônoma — estudo dos conceitos, tomada de decisões arquiteturais e implementação do código. A IA foi acionada em momentos pontuais: para aprofundar discussões já iniciadas, depurar erros específicos e validar decisões já tomadas.
 
 ---
 
@@ -24,126 +24,127 @@ O desenvolvimento foi realizado de forma autônoma — estudo dos conceitos, tom
 ### Prompt 1 — Discussão de Arquiteturas (após estudo prévio)
 
 **Contexto:**
-Antes de acionar a IA, estudei o material do treinamento (Semanas 10 e 11) e pesquisei sobre as formas de integrar .NET e COBOL fora do mainframe. Com base nisso, cheguei a três arquiteturas candidatas e levei para a IA para uma discussão mais aprofundada — não para que ela escolhesse, mas para que me ajudasse a enxergar pontos cegos.
+Após estudar o material do treinamento (Semanas 10 e 11) e pesquisar sobre integração .NET/COBOL, cheguei a três arquiteturas candidatas e levei para a IA para discussão aprofundada.
 
 **Prompt utilizado:**
-> "Estudei três arquiteturas possíveis para integrar .NET e COBOL neste projeto. Quero uma discussão mais ampla sobre cenários relevantes, pontos fortes e fracos de cada uma:
->
-> Arquitetura 1 — COBOL compilado como .dll, chamado pelo .NET via P/Invoke. Comunicação in-process.
->
-> Arquitetura 2 — COBOL como executável separado. .NET invoca via Process e troca dados por arquivo ou stdout.
->
-> Arquitetura 3 — .NET Web API REST na frente, COBOL via P/Invoke por baixo. Interface HTML consome a API.
->
-> Contexto: projeto individual, prazo curto, precisa demonstrar o padrão z/OS Connect do treinamento, e a Aline (cliente) confirmou que o COBOL deve ser quem persiste os dados."
+> "Estudei três arquiteturas possíveis para integrar .NET e COBOL. Quero uma discussão mais ampla sobre cenários relevantes, pontos fortes e fracos de cada uma:
+> Arquitetura 1 — COBOL como .dll via P/Invoke.
+> Arquitetura 2 — COBOL como executável separado, .NET via Process e arquivo.
+> Arquitetura 3 — .NET Web API REST na frente, COBOL via P/Invoke por baixo."
 
 **Resposta obtida:**
-A IA estruturou a discussão em torno de quatro dimensões: acoplamento, testabilidade, fidelidade ao padrão mainframe e risco de prazo.
-
-Sobre a **Arquitetura 1**, destacou como ponto forte a chamada in-process sem overhead de processo, e a fidelidade ao padrão de módulos COBOL chamados por outros programas. Como ponto fraco, apontou que o marshalling de dados entre C# e COBOL (campos `PIC X`, endianness, padding) é uma fonte de bugs silenciosos difíceis de diagnosticar — o código compila mas os dados chegam corrompidos se o `[StructLayout]` não estiver correto.
-
-Sobre a **Arquitetura 2**, reconheceu a simplicidade de implementação mas foi direta nos problemas: criar um processo por requisição é inviável em produção, a troca de dados por arquivo é frágil, e não existe paralelismo seguro. Cenário relevante levantado pela IA: se dois atendentes buscarem o mesmo cliente simultaneamente, podem sobrescrever o arquivo de dados um do outro. Ponto que eu não havia considerado.
-
-Sobre a **Arquitetura 3**, apontou como ponto forte decisivo a separação de responsabilidades: o .NET faz validação e exposição REST, o COBOL faz regras de negócio e persistência. Isso reproduz exatamente o padrão do z/OS Connect — onde uma camada moderna expõe o COBOL como API sem que o programa COBOL saiba que está sendo chamado por REST. Como ponto fraco, sinalizou que o P/Invoke ainda existe por baixo, então os riscos de marshalling da Arquitetura 1 persistem, só ficam encapsulados no `ClienteService`.
-
-**Análise crítica da resposta:**
-A discussão foi valiosa. O ponto sobre concorrência na Arquitetura 2 era um risco real que eu não havia mapeado. A comparação com o z/OS Connect foi o argumento que me convenceu definitivamente pela Arquitetura 3 — não por ser "mais bonita", mas por ser a que melhor demonstra o padrão estudado no treinamento.
-
-O que a IA não trouxe espontaneamente: não mencionou que o GnuCOBOL tem limitações no formato fixo (colunas 1-72) que impactam diretamente a escrita do código. Esse ponto só apareceu como problema real na compilação, não na discussão arquitetural.
-
-**Impacto no projeto:**
-A Arquitetura 3 foi adotada. A justificativa do z/OS Connect foi incorporada ao Documento de Arquitetura. O risco de marshalling levantado pela IA orientou a atenção especial ao `[StructLayout(Pack=1, CharSet=CharSet.Ansi)]` na `ClienteStruct.cs`.
-
----
-
-### Prompt 2 — Depuração: erro de compilação COBOL (colunas fixas)
-
-**Contexto:**
-Ao compilar o `CLICORE.cbl` pela primeira vez, recebi o erro `'WS-MENSAG' is not defined`. O campo estava declarado na copybook como `WS-MENSAGEM` (10 caracteres). O erro não fazia sentido à primeira vista — o campo existia. Tentei resolver sozinho por cerca de 20 minutos sem sucesso antes de acionar a IA.
-
-**Prompt utilizado:**
-> "Estou compilando COBOL com GnuCOBOL e recebo o erro `'WS-MENSAG' is not defined`. O campo se chama `WS-MENSAGEM` e está declarado corretamente na copybook. O compilador está encontrando a copybook (confirmei com `-I`). O que pode estar causando esse truncamento do nome?"
-
-**Resposta obtida:**
-A IA identificou imediatamente: o COBOL em formato fixo tem um limite rígido de 72 caracteres por linha (colunas 1-72 são código; 73-80 são reservadas para numeração de sequência, ignoradas pelo compilador moderno mas ainda respeitadas em formato fixo). A linha `MOVE 'Erro ao atualizar cliente' TO WS-MENSAGEM` ultrapassava esse limite, e o compilador simplesmente cortava o resto — incluindo parte do nome `WS-MENSAGEM`, que virava `WS-MENSAG`.
-
-Solução: quebrar a linha em duas:
-```cobol
-           MOVE 'Erro ao atualizar cliente'
-               TO WS-MENSAGEM
-```
+A IA estruturou a discussão em torno de acoplamento, testabilidade, fidelidade ao padrão mainframe e risco de prazo. Destacou que a Arquitetura 2 (processo separado) tem risco de concorrência — dois atendentes acessando o mesmo arquivo simultaneamente. Recomendou a Arquitetura 3 com P/Invoke como a que melhor reproduz o padrão z/OS Connect.
 
 **Análise crítica:**
-O diagnóstico foi certeiro e imediato — o que eu não consegui em 20 minutos a IA resolveu em segundos porque reconheceu um padrão clássico de erro COBOL. Porém, é importante registrar que esse era um erro que eu deveria ter antecipado ao escrever o código — o limite de 72 colunas é um conceito básico do COBOL fixo que estava no material do treinamento. A IA foi útil aqui como "segunda opinião técnica", não como substituta do conhecimento.
-
-Um detalhe importante: a IA inicialmente sugeriu usar a flag `-free` (formato livre) como solução alternativa. Testei e não funcionou porque o arquivo já tinha indentação de formato fixo. Precisei informar isso para que a IA ajustasse a sugestão para quebrar a linha — o que mostra que a IA precisa do contexto real para ser precisa em problemas de compilador.
+A discussão foi valiosa. O risco de concorrência na Arquitetura 2 era um ponto que eu não havia mapeado — e que resolvemos com um `lock` no `ClienteService`. A comparação com o z/OS Connect foi pertinente. Porém, a IA não antecipou os problemas de compatibilidade 32/64 bits do P/Invoke no Windows com GnuCOBOL, que só apareceram na implementação.
 
 **Impacto no projeto:**
-O erro foi corrigido. Todas as linhas do `CLICORE.cbl` foram revisadas para respeitar o limite de 72 colunas. O build passou sem erros na sequência.
+Iniciamos com a Arquitetura 3 (P/Invoke). Os problemas de runtime levaram à revisão dessa decisão no Prompt 6.
 
 ---
 
-### Prompt 3 — Depuração: conflito de pacotes NuGet
+### Prompt 2 — Geração da Copybook e Struct C#
 
-**Contexto:**
-Ao adicionar o `Swashbuckle.AspNetCore` para o Swagger, recebi um erro de conflito com o `Microsoft.OpenApi` que já havia sido adicionado manualmente em versão anterior. O projeto parou de buildar.
+**Objetivo:** Criar o contrato de dados compartilhado com alinhamento de memória correto.
 
 **Prompt utilizado:**
-> "Ao adicionar Swashbuckle.AspNetCore ao projeto .NET 10, recebi: `NU1605: Downgrade de pacote detectado: Microsoft.OpenApi de 2.7.5 para 2.0.1`. O Swashbuckle precisa da versão 2.7.5 mas eu havia adicionado manualmente a 2.0.1. Como resolver sem quebrar as dependências?"
+> "Preciso criar uma copybook COBOL e sua equivalente struct C# para P/Invoke. Os campos são: operação (1), código (4), nome (40), telefone (15), e-mail (50), return code (2), mensagem (80). Como garantir alinhamento correto?"
 
 **Resposta obtida:**
-A IA explicou que o erro ocorre porque o NuGet tem regras de resolução de versão e não aceita downgrade silencioso — quando duas dependências pedem versões diferentes, o build falha com `TreatWarningsAsErrors`. A solução é remover a referência manual ao `Microsoft.OpenApi` e deixar o Swashbuckle resolver a versão correta transitivamente, ou então fixar a versão na que o Swashbuckle precisa (`2.7.5`).
-
-```cmd
-dotnet remove package Microsoft.OpenApi
-dotnet add package Microsoft.OpenApi --version 2.7.5
-```
+Gerou a copybook com `PIC X` e `PIC 9`, e a struct C# com `[StructLayout(Pack=1, CharSet=Ansi)]`. Explicou por que `Pack=1` remove o padding automático do C# e por que `CharSet.Ansi` garante 1 byte por caractere.
 
 **Análise crítica:**
-A resposta foi direta e correta. O ponto interessante é que a IA explicou o mecanismo por trás do erro (resolução transitiva de dependências no NuGet) e não apenas o comando para corrigir. Isso foi útil porque o mesmo tipo de conflito pode aparecer em outros pacotes no futuro — entender o mecanismo previne o problema, não só resolve o sintoma.
-
-Não há pontos negativos nessa interação. O problema era claro, a solução foi precisa e funcionou na primeira tentativa.
+Tecnicamente correto. O detalhe do `Pack=1` é crítico. A IA não alertou sobre o problema de newline no final da copybook e o limite de 72 colunas do COBOL fixo, que causaram erros de compilação descobertos na prática.
 
 **Impacto no projeto:**
-O conflito foi resolvido. O build voltou a funcionar com `Microsoft.OpenApi 2.7.5` + `Swashbuckle.AspNetCore 10.2.3`.
+Copybook e struct adotadas. Ajustes manuais necessários para newline e colunas.
 
 ---
 
-### Prompt 4 — Depuração: Code Smells no SonarQube
+### Prompt 3 — Depuração: colunas fixas do COBOL
 
-**Contexto:**
-Após a primeira análise do SonarQube, apareceram Code Smells que não conhecia: S6444 (Regex sem timeout) e S1066 (if aninhados). Quis entender o motivo técnico por trás de cada um antes de corrigir.
+**Objetivo:** Resolver o erro `'WS-MENSAG' is not defined` na compilação.
 
 **Prompt utilizado:**
-> "O SonarQube reportou dois Code Smells no meu C#: S6444 diz para adicionar timeout no Regex.IsMatch, e S1066 diz para mesclar if aninhados. Quero entender o motivo técnico por trás de cada um, não apenas como corrigir."
+> "Compilando CLICORE.cbl recebo `'WS-MENSAG' is not defined`. O campo se chama WS-MENSAGEM e está na copybook. O que pode causar esse truncamento?"
 
 **Resposta obtida:**
-Para o **S6444**: expressões regulares podem sofrer *catastrophic backtracking* — um fenômeno onde certos padrões de regex com entrada maliciosa fazem o motor de regex executar por tempo exponencial, bloqueando a thread indefinidamente. O `TimeSpan.FromSeconds(1)` define um limite máximo de execução, lançando `RegexMatchTimeoutException` se ultrapassado. Além disso, declarar o Regex como campo estático evita recompilação do padrão a cada chamada.
-
-Para o **S1066**: o if aninhado `if (A) { if (B) { } }` e o if mesclado `if (A && B) { }` são semanticamente equivalentes, mas o segundo é mais legível e tem complexidade ciclomática menor — o que afeta métricas de manutenibilidade e testabilidade do código.
+Identificou o limite de 72 colunas do COBOL formato fixo — a linha `MOVE 'mensagem longa' TO WS-MENSAGEM` ultrapassava o limite e o compilador cortava o nome do campo. Solução: quebrar em duas linhas.
 
 **Análise crítica:**
-A explicação sobre catastrophic backtracking foi o ponto mais valioso dessa interação. Não era algo que eu conhecia, e a IA trouxe um exemplo concreto de como um padrão aparentemente simples pode virar uma vulnerabilidade de negação de serviço (ReDoS). Isso mudou minha perspectiva sobre validação com Regex — não é apenas uma questão de estilo, é uma questão de segurança.
-
-A explicação sobre S1066 foi mais trivial, mas a menção à complexidade ciclomática foi um detalhe útil para o Documento de Arquitetura.
+Diagnóstico certeiro e imediato. A IA inicialmente sugeriu `-free` (formato livre) sem entender o contexto — corrigiu após o feedback. Mostra que para problemas de compilador, o output de erro real é essencial.
 
 **Impacto no projeto:**
-Ambos os Code Smells foram corrigidos com entendimento do motivo, não apenas mecanicamente. O Quality Gate passou de 2 Code Smells para 0. A explicação sobre ReDoS foi adicionada como comentário no código para documentar a intenção do timeout.
+Problema resolvido. Todas as linhas revisadas para respeitar 72 colunas.
 
 ---
 
-## 5. Considerações Finais
+### Prompt 4 — Correção de Code Smells no SonarQube
+
+**Objetivo:** Entender e corrigir S6444 (Regex sem timeout) e S1066 (if aninhados).
+
+**Prompt utilizado:**
+> "O SonarQube reportou S6444 (Pass a timeout to limit the execution time) e S1066 (Merge this if statement with the enclosing one). Quero entender o motivo técnico, não apenas como corrigir."
+
+**Resposta obtida:**
+Para S6444: Regex sem timeout é vulnerável a *catastrophic backtracking* (ReDoS) — padrões maliciosos podem travar a thread indefinidamente. A solução com `TimeSpan.FromSeconds(1)` define um limite máximo. Para S1066: if aninhados aumentam a complexidade ciclomática; mesclar com `&&` simplifica sem alterar a semântica.
+
+**Análise crítica:**
+A explicação sobre ReDoS foi o ponto mais valioso. Não era um conhecimento prévio e mudou a perspectiva sobre validação com Regex — não é estilo, é segurança. Sem pontos negativos nessa interação.
+
+**Impacto no projeto:**
+Ambas as correções aplicadas. Quality Gate passou de 2 Code Smells para 0.
+
+---
+
+### Prompt 5 — Geração dos Testes xUnit
+
+**Objetivo:** Criar testes isolados do COBOL.
+
+**Prompt utilizado:**
+> "Preciso de testes xUnit para o ClientesController sem depender do COBOL. Como isolar a lógica de negócio do processo externo?"
+
+**Resposta obtida:**
+Sugeriu extrair `IClienteService`, usar `Mock<IClienteService>` do Moq nos testes, e registrar a interface no DI. Gerou 18 casos de teste cobrindo todos os cenários.
+
+**Análise crítica:**
+Abordagem correta e padrão da indústria. A IA usou `[Theory]` com `[InlineData]` para múltiplos valores inválidos sem ser solicitada — boa decisão autônoma. Não mencionou que o construtor do Controller precisaria ser atualizado para usar a interface — descoberto na compilação.
+
+**Impacto no projeto:**
+18 testes implementados, todos passando.
+
+---
+
+### Prompt 6 — Decisão de Mudar para Processo Separado
+
+**Contexto:**
+Após várias tentativas de P/Invoke com GnuCOBOL (BadImageFormatException 32/64 bits, Access Violation 0xC0000005 com struct e IntPtr), a abordagem precisou ser revisada.
+
+**Prompt utilizado:**
+> "O P/Invoke com GnuCOBOL no Windows continua falhando com Access Violation mesmo com IntPtr e byte arrays. Quais são as alternativas reais para integrar .NET e COBOL sem P/Invoke? Qual é mais usada no mercado e mais fiel ao padrão mainframe?"
+
+**Resposta obtida:**
+A IA apresentou a alternativa de processo separado com troca de dados por arquivo. Explicou que esse padrão é o mais fiel ao mainframe real — no z/OS, sistemas legados são integrados via jobs batch que leem e gravam datasets, não via chamadas in-process. O P/Invoke seria adequado para COBOL compilado em ambiente controlado, mas o processo separado representa melhor o comportamento de um sistema legado real.
+
+**Análise crítica:**
+Esta foi a interação mais importante do projeto. A IA não apenas sugeriu uma alternativa técnica — ela reencuadrou a mudança como uma **decisão arquitetural mais adequada ao cenário**, não como uma limitação. O argumento de que "no mainframe real a integração é feita por datasets, não por chamadas in-process" é defensável e alinhado com o que o treinamento cobriu. Transformou uma dificuldade técnica em uma escolha consciente e justificável.
+
+**Impacto no projeto:**
+Mudança para processo separado adotada. CLICORE reescrito para ler `REQUEST.DAT` e gravar `RESPONSE.DAT`. Sistema funcionando end-to-end: navegador → API .NET → CLICORE.exe → CLIENTES.DAT → resposta.
+
+---
+
+## 4. Considerações Finais
 
 ### O que a IA contribuiu de forma genuína
-- A discussão arquitetural do Prompt 1 trouxe o argumento do z/OS Connect que não estava explícito no meu raciocínio inicial, e o risco de concorrência na Arquitetura 2 que eu não havia mapeado.
-- A explicação sobre catastrophic backtracking (ReDoS) no Prompt 4 foi conhecimento novo que mudou a forma como penso sobre validação com Regex.
-- A identificação imediata do problema de colunas fixas no COBOL (Prompt 2) economizou tempo real de depuração.
+- A discussão arquitetural do Prompt 1 trouxe o risco de concorrência que não estava mapeado
+- A explicação sobre ReDoS (Prompt 4) foi conhecimento novo que mudou a perspectiva sobre segurança
+- O reencuadramento da mudança arquitetural (Prompt 6) transformou uma limitação em decisão justificável
 
-### Onde a IA foi limitada ou precisou de correção
-- Não previu o problema das colunas fixas do COBOL na geração inicial do código — erro que só apareceu na compilação.
-- Sugestões para problemas de compilador sem o output de erro real foram genéricas e às vezes incorretas (sugeriu `-free` antes de entender o contexto).
-- Detalhes específicos de ambiente Windows (paths, ordem de passos) frequentemente precisaram de revisão manual.
-- A IA não alertou sobre a necessidade de copiar a `CLICORE.dll` para o diretório de execução da API — um detalhe crítico que causaria falha em tempo de execução.
+### Onde a IA foi limitada
+- Não previu os problemas de compatibilidade 32/64 bits do P/Invoke com GnuCOBOL no Windows
+- Sugestões para problemas de compilador sem o output real foram imprecisas
+- Não alertou sobre o limite de 72 colunas do COBOL fixo
 
 ### Síntese
-A IA foi mais útil como **interlocutora para discussões técnicas** do que como geradora de código. As conversas sobre arquitetura e sobre o motivo dos Code Smells trouxeram valor real de aprendizado. O código gerado foi útil como ponto de partida, mas sempre exigiu revisão e ajuste — o que é esperado e saudável. Usar a IA sem entender o código gerado seria um risco técnico e acadêmico: risco técnico porque bugs sutis passam despercebidos, e risco acadêmico porque na defesa do projeto é preciso explicar cada decisão com as próprias palavras.
+A IA foi mais útil como **interlocutora para discussões técnicas** e **reencuadradora de problemas** do que como geradora de código. O código gerado sempre exigiu revisão e ajuste. A postura adotada foi usar a IA como acelerador e interlocutora — nunca como autora da solução.

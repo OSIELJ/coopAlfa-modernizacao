@@ -1,71 +1,110 @@
-using System.Runtime.InteropServices;
+using System.Diagnostics;
+using System.Text;
 using CoopAlfa.Api.Models;
 
 namespace CoopAlfa.Api.Services;
 
 /// <summary>
-/// Serviço que integra a camada .NET ao núcleo COBOL via P/Invoke.
-/// Traduz chamadas REST em operações no arquivo indexado legado.
+/// Servico que integra .NET ao COBOL via processo separado.
+/// Grava a requisicao em REQUEST.DAT, executa CLICORE.exe,
+/// e le a resposta de RESPONSE.DAT.
+///
+/// Este padrao reproduz a integracao batch com mainframe legado,
+/// onde aplicacoes consumidoras interagem com o COBOL atraves de
+/// datasets (arquivos), sem acoplamento direto de memoria.
 /// </summary>
 public class ClienteService : IClienteService
 {
-    // P/Invoke — importa a função do CLICORE.dll compilada pelo GnuCOBOL
-    [DllImport("CLICORE.dll", EntryPoint = "CLICORE")]
-    private static extern void CLICORE(ref ClienteStruct cliente);
+    private static readonly string CobolDir =
+        Path.Combine(AppContext.BaseDirectory, "cobol");
 
-    /// <summary>
-    /// Consulta um cliente pelo código no arquivo indexado legado.
-    /// </summary>
+    private static readonly object _lock = new();
+
+    private ResponseCobol ExecutarCobol(string operacao, int codigo,
+        string telefone = "", string email = "")
+    {
+        lock (_lock)
+        {
+            // Monta a requisicao: operacao(1) + codigo(4) + telefone(15) + email(50)
+            var request = new StringBuilder();
+            request.Append(operacao.PadRight(1)[..1]);
+            request.Append(codigo.ToString().PadLeft(4, '0'));
+            request.Append(telefone.PadRight(15)[..15]);
+            request.Append(email.PadRight(50)[..50]);
+
+            var requestPath = Path.Combine(CobolDir, "REQUEST.DAT");
+            var responsePath = Path.Combine(CobolDir, "RESPONSE.DAT");
+
+            File.WriteAllText(requestPath, request.ToString(), Encoding.ASCII);
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = Path.Combine(CobolDir, "CLICORE.exe"),
+                WorkingDirectory = CobolDir,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using (var proc = Process.Start(psi))
+            {
+                proc!.WaitForExit(15000);
+            }
+
+            if (!File.Exists(responsePath))
+                return new ResponseCobol
+                {
+                    ReturnCode = "02",
+                    Mensagem = "Erro: resposta nao gerada"
+                };
+
+            // Le a resposta e remove quebras de linha
+            var linha = File.ReadAllText(responsePath, Encoding.ASCII)
+                            .Replace("\r", "").Replace("\n", "");
+
+            // Garante tamanho minimo preenchendo com espacos
+            linha = linha.PadRight(187);
+
+            // Layout: returncode(2) + nome(40) + telefone(15) + email(50) + mensagem(80)
+            return new ResponseCobol
+            {
+                ReturnCode = linha.Substring(0, 2).Trim(),
+                Nome = linha.Substring(2, 40).Trim(),
+                Telefone = linha.Substring(42, 15).Trim(),
+                Email = linha.Substring(57, 50).Trim(),
+                Mensagem = linha.Substring(107, 80).Trim()
+            };
+        }
+    }
+
     public ClienteModel? Consultar(int codigo)
     {
-        var dados = new ClienteStruct
-        {
-            Operacao   = ClienteStruct.OperacaoConsultar,
-            Codigo     = codigo.ToString().PadLeft(4, '0'),
-            Nome       = new string(' ', 40),
-            Telefone   = new string(' ', 15),
-            Email      = new string(' ', 50),
-            ReturnCode = new string(' ', 2),
-            Mensagem   = new string(' ', 80)
-        };
-
-        CLICORE(ref dados);
-
-        if (dados.ReturnCode.Trim() == ClienteStruct.ReturnNaoEncontrado)
-            return null;
+        var r = ExecutarCobol("C", codigo);
+        if (r.ReturnCode == "01") return null;
 
         return new ClienteModel
         {
-            Codigo   = codigo,
-            Nome     = dados.Nome.Trim(),
-            Telefone = dados.Telefone.Trim(),
-            Email    = dados.Email.Trim()
+            Codigo = codigo,
+            Nome = r.Nome,
+            Telefone = r.Telefone,
+            Email = r.Email
         };
     }
 
-    /// <summary>
-    /// Atualiza telefone e e-mail de um cliente no arquivo indexado legado.
-    /// </summary>
-    public (bool sucesso, string mensagem) Atualizar(int codigo, string telefone, string email)
+    public (bool sucesso, string mensagem) Atualizar(
+        int codigo, string telefone, string email)
     {
-        var dados = new ClienteStruct
-        {
-            Operacao   = ClienteStruct.OperacaoAtualizar,
-            Codigo     = codigo.ToString().PadLeft(4, '0'),
-            Nome       = new string(' ', 40),
-            Telefone   = telefone.PadRight(15),
-            Email      = email.PadRight(50),
-            ReturnCode = new string(' ', 2),
-            Mensagem   = new string(' ', 80)
-        };
+        var r = ExecutarCobol("A", codigo, telefone, email);
+        return r.ReturnCode == "00"
+            ? (true, r.Mensagem)
+            : (false, r.Mensagem);
+    }
 
-        CLICORE(ref dados);
-
-        var rc  = dados.ReturnCode.Trim();
-        var msg = dados.Mensagem.Trim();
-
-        return rc == ClienteStruct.ReturnSucesso
-            ? (true, msg)
-            : (false, msg);
+    private class ResponseCobol
+    {
+        public string ReturnCode { get; set; } = "02";
+        public string Nome { get; set; } = string.Empty;
+        public string Telefone { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Mensagem { get; set; } = string.Empty;
     }
 }
