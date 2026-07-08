@@ -11,7 +11,6 @@ public class ClientesController : ControllerBase
 {
     private readonly IClienteService _service;
 
-    // Regex compilados com timeout — boa prática recomendada pelo SonarQube
     private static readonly Regex TelefoneRegex = new(
         @"^\(\d{2}\) \d{4,5}-\d{4}$",
         RegexOptions.None,
@@ -51,6 +50,50 @@ public class ClientesController : ControllerBase
     }
 
     /// <summary>
+    /// Cadastra um novo cliente.
+    /// POST /api/clientes
+    /// </summary>
+    [HttpPost]
+    [ProducesResponseType(typeof(ApiResponse<ClienteModel>), 201)]
+    [ProducesResponseType(typeof(ApiResponse<ClienteModel>), 400)]
+    [ProducesResponseType(typeof(ApiResponse<ClienteModel>), 409)]
+    public IActionResult Cadastrar([FromBody] CadastrarClienteRequest request)
+    {
+        if (request.Codigo <= 0 || request.Codigo > 9999)
+            return BadRequest(ApiResponse<ClienteModel>.Erro(
+                "Código inválido. Deve ser um número entre 1 e 9999."));
+
+        if (string.IsNullOrWhiteSpace(request.Nome))
+            return BadRequest(ApiResponse<ClienteModel>.Erro(
+                "Nome é obrigatório."));
+
+        if (request.Nome.Length > 40)
+            return BadRequest(ApiResponse<ClienteModel>.Erro(
+                "Nome deve ter no máximo 40 caracteres."));
+
+        if (!string.IsNullOrEmpty(request.Telefone) &&
+            !TelefoneRegex.IsMatch(request.Telefone))
+            return BadRequest(ApiResponse<ClienteModel>.Erro(
+                "Telefone inválido. Use o formato (XX) XXXXX-XXXX."));
+
+        if (!string.IsNullOrEmpty(request.Email) &&
+            !EmailRegex.IsMatch(request.Email))
+            return BadRequest(ApiResponse<ClienteModel>.Erro(
+                "E-mail inválido."));
+
+        var (sucesso, mensagem) = _service.Cadastrar(
+            request.Codigo, request.Nome, request.Telefone, request.Email);
+
+        if (!sucesso)
+            return Conflict(ApiResponse<ClienteModel>.Erro(mensagem));
+
+        var cliente = _service.Consultar(request.Codigo);
+        return CreatedAtAction(nameof(Consultar),
+            new { codigo = request.Codigo },
+            ApiResponse<ClienteModel>.Ok(cliente!, mensagem));
+    }
+
+    /// <summary>
     /// Atualiza telefone e e-mail de um cliente.
     /// PUT /api/clientes/{codigo}/contato
     /// </summary>
@@ -65,13 +108,13 @@ public class ClientesController : ControllerBase
             return BadRequest(ApiResponse<ClienteModel>.Erro(
                 "Código inválido. Deve ser um número entre 1 e 9999."));
 
-        // Validação de telefone — if mesclado conforme recomendação SonarQube S1066
-        if (!string.IsNullOrEmpty(request.Telefone) && !TelefoneRegex.IsMatch(request.Telefone))
+        if (!string.IsNullOrEmpty(request.Telefone) &&
+            !TelefoneRegex.IsMatch(request.Telefone))
             return BadRequest(ApiResponse<ClienteModel>.Erro(
                 "Telefone inválido. Use o formato (XX) XXXXX-XXXX."));
 
-        // Validação de e-mail — if mesclado conforme recomendação SonarQube S1066
-        if (!string.IsNullOrEmpty(request.Email) && !EmailRegex.IsMatch(request.Email))
+        if (!string.IsNullOrEmpty(request.Email) &&
+            !EmailRegex.IsMatch(request.Email))
             return BadRequest(ApiResponse<ClienteModel>.Erro(
                 "E-mail inválido."));
 

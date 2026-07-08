@@ -1,126 +1,245 @@
-# Projeto 5 — Processamento de Transações Bancárias (COBOL + JCL)
+# CoopAlfa — Modernização do Sistema de Cadastro de Clientes
 
-Projeto da **Semana 7** do programa Montreal Acelera Maker (trilha COBOL/Mainframe).
+Solução de modernização do cadastro de clientes da Cooperativa Financeira Alfa, desenvolvida como projeto final do programa Acelera Maker (Montreal).
 
-Um banco precisa processar diariamente um arquivo de transações de débito e
-crédito, atualizando o saldo dos clientes e gerando relatórios. O job foi
-desenvolvido e executado em ambiente **MVS 3.8j (TK5 / Hercules)** via TSO.
+O sistema expõe um núcleo COBOL legado como API REST em .NET, permitindo que atendentes consultem, cadastrem e atualizem dados de clientes por uma interface web moderna — sem substituir o processamento legado.
 
-## O que o job faz
+---
 
-O `PROJETO5.jcl` executa 4 passos em sequência:
+## Demonstração
 
-| Passo | Programa | Função |
-|---|---|---|
-| STEP0 | IEFBR14 | Apaga os arquivos de saída de execuções anteriores |
-| SORTCLI | SORT | Ordena o arquivo de clientes por ID |
-| SORTTRX | SORT | Ordena o arquivo de transações por ID |
-| RUN | COBUCLG | Compila, linkedita e executa o programa COBOL |
+### Consultar Cliente
+![Consultar Cliente](docs/gifs/CoopAlfa___consulta_cliente.gif)
 
-O programa COBOL (`PROJETO5.cbl`) processa os dois arquivos ordenados em uma
-única passada, usando a técnica clássica de **match/merge** (casamento de
-arquivos por chave):
+### Criar Cliente
+![Criar Cliente](docs/gifs/CoopAlfa___criar_cliente.gif)
 
-- IDs iguais → valida e aplica a transação (crédito soma, débito subtrai);
-- ID do cliente menor → cliente terminou: grava na saída com saldo atualizado
-  e imprime o relatório de créditos/débitos dele;
-- ID da transação menor → transação órfã (cliente inexistente): registra erro.
+### Editar Contato
+![Editar Contato](docs/gifs/CoopAlfa___editar_cliente.gif)
 
-## Validações implementadas
+---
 
-Toda inconsistência é gravada no arquivo de erros, sem interromper o job:
-
-1. **Cliente inexistente** — `ERRO: CLIENTE NAO ENCONTRADO - ID nnnnn`
-2. **Tipo de transação inválido** (≠ C/D) — `ERRO: TIPO DE TRANSACAO INVALIDO - ID nnnnn`
-3. **Valor zerado** — `ERRO: VALOR DE TRANSACAO INVALIDO - ID nnnnn`
-4. **Saldo insuficiente** (débito > saldo; transação não é aplicada) —
-   `ERRO: SALDO INSUFICIENTE - ID nnnnn`
-
-## Estrutura do repositório
+## Arquitetura
 
 ```
-src/              fonte COBOL e JCL
-dados/entrada/    arquivos de entrada (clientes e transações)
-dados/saida/      arquivos gerados pela execução (saldos atualizados e erros)
-evidencias/       prints da execução real no TK5
+Interface HTML (atendente)
+        ↓ HTTP/REST
+  API REST — ASP.NET Core (.NET 10)
+        ↓ Processo separado (arquivo entrada/saída)
+  Núcleo COBOL — CLICORE.exe (GnuCOBOL 3.2 64 bits)
+        ↓ I/O
+  Arquivo indexado — CLIENTES.DAT
 ```
 
-## Resultado da execução
+O .NET grava a requisição em `REQUEST.DAT`, executa o `CLICORE.exe`, e lê a resposta de `RESPONSE.DAT`. Este padrão reproduz a integração batch com mainframe legado, onde aplicações consumidoras interagem com o COBOL através de datasets.
 
-Job executado via `SUBMIT 'HERC01.JCL(PROJETO5)'` com **MAX COND CODE 0004**
-(RC 4 apenas no passo de compilação — warnings do compilador ANS COBOL,
-sem impacto; demais passos RC 0000).
+Detalhes completos em [`docs/arquitetura.md`](docs/arquitetura.md).
 
-Estatísticas produzidas:
+---
+
+## Pré-requisitos
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [GnuCOBOL 3.2 64 bits](https://github.com/OCamlPro/superbol-artefacts/releases/download/gnucobol-3.2-aio-20240402/gnucobol-3.2-aio-20240402-user.msi) (SuperBOL All-in-One para Windows)
+- Git
+
+---
+
+## Como rodar o projeto
+
+### 1. Clone o repositório
+
+```bash
+git clone https://github.com/OSIELJ/coopAlfa-modernizacao.git
+cd coopAlfa-modernizacao
+```
+
+### 2. Compile o núcleo COBOL
+
+```cmd
+"C:\Users\%USERNAME%\AppData\Local\GnuCOBOL\bin\cobc.exe" -x -fimplicit-init -I "src\cobol\copybook" src\cobol\CLICORE.cbl -o src\cobol\build\CLICORE.exe
+```
+
+### 3. Popula os dados iniciais
+
+```cmd
+"C:\Users\%USERNAME%\AppData\Local\GnuCOBOL\bin\cobc.exe" -x -fimplicit-init -I "src\cobol\copybook" src\cobol\CLISEED.cbl -o src\cobol\build\CLISEED.exe
+cd src\cobol\build
+CLISEED.exe
+cd ..\..\..
+```
+
+### 4. Copia os arquivos COBOL para a API
+
+```cmd
+mkdir src\dotnet\CoopAlfa.Api\cobol
+copy src\cobol\build\CLICORE.exe src\dotnet\CoopAlfa.Api\cobol\
+copy src\cobol\build\CLIENTES.DAT src\dotnet\CoopAlfa.Api\cobol\
+copy "C:\Users\%USERNAME%\AppData\Local\GnuCOBOL\bin\*.dll" src\dotnet\CoopAlfa.Api\cobol\
+```
+
+### 5. Execute a API
+
+```cmd
+cd src\dotnet\CoopAlfa.Api
+dotnet run
+```
+
+A API sobe em `http://localhost:5125`.
+
+### 6. Acesse a interface do atendente
 
 ```
-CLIENTES PROCESSADOS.....: 000003
-TRANSACOES PROCESSADAS...: 000007
-CREDITOS PROCESSADOS.....: 000001
-DEBITOS PROCESSADOS......: 000002
-ERROS ENCONTRADOS........: 000004
+http://localhost:5125/index.html
 ```
 
-Saldos finais gravados em `dados/saida/SAIDA.txt`:
+### 7. Acesse o Swagger
 
-| Cliente | Saldo inicial | Saldo final |
-|---|---|---|
-| 00123 JOAO SILVA | 000010000 | 000010300 |
-| 00456 MARIA SOUZA | 000025000 | 000024000 |
-| 00789 CARLOS PEREIRA | 000005000 | 000005000 |
+```
+http://localhost:5125/swagger
+```
 
-## Evidências da execução
+---
 
-Prints capturados no TK5 (terminal TN3270) durante a execução real do job.
+## Endpoints da API
 
-**Arquivos de entrada no mainframe** — clientes e transações (propositalmente
-fora de ordem, com os casos de erro embutidos):
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| `GET` | `/api/clientes/{codigo}` | Consulta cliente pelo código (1-9999) |
+| `POST` | `/api/clientes` | Cadastra um novo cliente |
+| `PUT` | `/api/clientes/{codigo}/contato` | Atualiza telefone e e-mail |
 
-![Arquivo de clientes](evidencias/01-entrada-clientes.png)
+### Exemplo — Consultar cliente
 
-![Arquivo de transações](evidencias/02-entrada-transacoes.png)
+```http
+GET /api/clientes/1001
+```
 
-**Datasets criados pela execução** — entradas transferidas e saídas geradas
-pelo job (`SAIDA` e `ERROS` catalogados em disco):
+```json
+{
+  "sucesso": true,
+  "mensagem": "Operação realizada com sucesso",
+  "dados": {
+    "codigo": 1001,
+    "nome": "Maria Silva",
+    "telefone": "(11) 99999-1234",
+    "email": "maria@email.com"
+  }
+}
+```
 
-![Datasets do projeto](evidencias/03-datasets-criados.png)
+### Exemplo — Cadastrar cliente
 
-**Job no spool do JES2:**
+```http
+POST /api/clientes
+Content-Type: application/json
 
-![Job no spool](evidencias/04-job-spool.png)
+{
+  "codigo": 2001,
+  "nome": "Carlos Ferreira",
+  "telefone": "(41) 99999-5678",
+  "email": "carlos@email.com"
+}
+```
 
-**Relatório por cliente e estatísticas** (SYSOUT do passo GO):
+### Exemplo — Atualizar contato
 
-![Relatório e estatísticas](evidencias/05-relatorio-estatisticas.png)
+```http
+PUT /api/clientes/1001/contato
+Content-Type: application/json
 
-**Arquivo de saída** — mesmo layout do cadastro, saldos atualizados
-(00123 recebeu +500 e −200; 00456 teve −1000; 00789 ficou intacto porque
-o débito foi rejeitado por saldo insuficiente):
+{
+  "telefone": "(11) 98888-5678",
+  "email": "maria.nova@email.com"
+}
+```
 
-![Saída com saldos atualizados](evidencias/06-saida-saldos.png)
+---
 
-**Arquivo de erros** — as 4 validações exigidas pelo enunciado, todas
-disparadas pela massa de teste:
+## Como rodar os testes
 
-![Arquivo de erros](evidencias/07-arquivo-erros.png)
+```cmd
+cd src\dotnet
+dotnet test CoopAlfa.slnx
+```
 
-## Como executar (TK5)
+Resultado esperado:
+```
+Resumo do teste: total: 17; falhou: 0; bem-sucedido: 17; ignorado: 0
+```
 
-1. Subir o TK5 (Hercules) e logar no TSO.
-2. Transferir `src/PROJETO5.jcl` para um membro de PDS
-   (ex.: `HERC01.JCL(PROJETO5)`) via IND\$FILE ou editor do TSO.
-3. No TSO: `SUBMIT 'HERC01.JCL(PROJETO5)'`.
-4. Conferir o resultado no spool (RFE, opção 3.8) e os datasets
-   `HERC01.PROJ5.SAIDA` e `HERC01.PROJ5.ERROS` (Browse).
+---
 
-Os dados de entrada já estão embutidos no JCL (cartões `DD *`), portanto o
-job é autocontido — basta um único membro para reproduzir a execução.
+## Qualidade de código
 
-## Detalhes técnicos do ambiente
+Análise com **SonarQube Community** (Docker local). Resultado atual: **Quality Gate Passed** — 0 Bugs, 0 Vulnerabilities, 0 Code Smells.
 
-- Compilador: ANS COBOL (IKFCBL00) via procedure `COBUCLG` — por ser um
-  dialeto antigo, o fonte evita recursos do COBOL-74+ (sem `STRING`,
-  `EVALUATE` ou terminadores `END-IF`).
-- Sort: OS/360 Sort/Merge — exige o DD `SORTLIB` apontando para
-  `SYS1.SORTLIB` em cada passo de ordenação.
-- Saídas em `SYSOUT=H` (classe held) para consulta no spool via RFE.
+---
+
+## CI/CD
+
+Pipeline no GitHub Actions (`.github/workflows/build.yml`). Executa build e testes a cada push nas branches `main` e `dev`.
+
+---
+
+## Estrutura do projeto
+
+```
+coopAlfa-modernizacao/
+├── .github/workflows/
+│   └── build.yml              ← CI/CD GitHub Actions
+├── docs/
+│   ├── gifs/                  ← GIFs de demonstração
+│   ├── arquitetura.md
+│   ├── plano-de-testes.md
+│   └── relatorio-ia.md
+├── src/
+│   ├── cobol/
+│   │   ├── copybook/
+│   │   │   └── CLIENTE.cpy    ← Contrato de dados
+│   │   ├── build/
+│   │   │   ├── CLICORE.exe    ← Núcleo COBOL compilado
+│   │   │   └── CLIENTES.DAT   ← Arquivo indexado legado
+│   │   ├── CLICORE.cbl        ← Código-fonte COBOL
+│   │   └── CLISEED.cbl        ← Populador de dados iniciais
+│   └── dotnet/
+│       ├── CoopAlfa.Api/
+│       │   ├── Controllers/   ← Endpoints REST
+│       │   ├── Models/        ← DTOs
+│       │   ├── Services/      ← Integração COBOL via processo
+│       │   ├── cobol/         ← Runtime COBOL (gerado localmente)
+│       │   └── wwwroot/       ← Interface do atendente (HTML)
+│       └── CoopAlfa.Tests/
+│           └── ClientesControllerTests.cs ← 17 testes xUnit
+├── build.cmd                  ← Script de build do COBOL
+└── README.md
+```
+
+---
+
+## Documentação
+
+| Documento | Descrição |
+|-----------|-----------|
+| [Arquitetura](docs/arquitetura.md) | Decisões técnicas, componentes e fluxo |
+| [Plano de Testes](docs/plano-de-testes.md) | Casos de teste com critérios de aceitação |
+| [Relatório de IA](docs/relatorio-ia.md) | Utilização crítica de IA no desenvolvimento |
+
+---
+
+## Tecnologias
+
+| Tecnologia | Uso |
+|-----------|-----|
+| GnuCOBOL 3.2 (64 bits) | Núcleo legado — regras e persistência |
+| ASP.NET Core (.NET 10) | API REST e interface do atendente |
+| xUnit + Moq | Testes automatizados |
+| SonarQube Community | Análise de qualidade de código |
+| GitHub Actions | CI/CD |
+| Docker | SonarQube local |
+
+---
+
+## Autor
+
+**Osiel** — Programa Acelera Maker, Montreal (2026)
