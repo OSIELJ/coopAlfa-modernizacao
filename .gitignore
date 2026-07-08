@@ -440,3 +440,11 @@ src/cobol/build/
 
 # SonarQube local
 .sonarqube/
+
+# Runtime COBOL (DLLs e executável compilado)
+src/dotnet/CoopAlfa.Api/cobol/
+
+# Arquivos de dados COBOL
+src/cobol/build/CLIENTES.DAT
+src/cobol/build/REQUEST.DAT
+src/cobol/build/RESPONSE.DAT

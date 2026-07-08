@@ -1,487 +1,563 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CoopAlfa — Cadastro de Clientes</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoopAlfa — Cadastro de Clientes</title>
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
-  :root {
-    --azul:       #1B3F6E;
-    --azul-claro: #2A5CA8;
-    --verde:      #0F7B5A;
-    --verde-bg:   #E8F5F0;
-    --vermelho:   #C0392B;
-    --vermelho-bg:#FDECEA;
-    --cinza-bg:   #F4F6F9;
-    --cinza-bord: #DDE2EA;
-    --texto:      #1A1A2E;
-    --texto-sec:  #5A6478;
-    --branco:     #FFFFFF;
-    --sombra:     0 2px 12px rgba(27,63,110,0.10);
-    --radius:     10px;
-    --font:       'Segoe UI', system-ui, sans-serif;
-  }
+        :root {
+            --azul: #1B3F6E;
+            --azul-claro: #2A5CA8;
+            --verde: #0F7B5A;
+            --verde-bg: #E8F5F0;
+            --vermelho: #C0392B;
+            --vermelho-bg: #FDECEA;
+            --cinza-bg: #F4F6F9;
+            --cinza-bord: #DDE2EA;
+            --texto: #1A1A2E;
+            --texto-sec: #5A6478;
+            --branco: #FFFFFF;
+            --sombra: 0 2px 12px rgba(27,63,110,0.10);
+            --radius: 10px;
+            --font: 'Segoe UI', system-ui, sans-serif;
+        }
 
-  body {
-    font-family: var(--font);
-    background: var(--cinza-bg);
-    color: var(--texto);
-    min-height: 100vh;
-  }
+        body {
+            font-family: var(--font);
+            background: var(--cinza-bg);
+            color: var(--texto);
+            min-height: 100vh;
+        }
 
-  /* HEADER */
-  header {
-    background: var(--azul);
-    padding: 0 32px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
-  }
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: var(--branco);
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-  }
-  .logo-icon {
-    width: 32px; height: 32px;
-    background: var(--azul-claro);
-    border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px;
-  }
-  .header-sub {
-    color: rgba(255,255,255,0.6);
-    font-size: 13px;
-  }
+        /* HEADER */
+        header {
+            background: var(--azul);
+            padding: 0 32px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+        }
 
-  /* MAIN */
-  main {
-    max-width: 680px;
-    margin: 40px auto;
-    padding: 0 16px;
-  }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--branco);
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
 
-  /* BUSCA */
-  .card {
-    background: var(--branco);
-    border-radius: var(--radius);
-    box-shadow: var(--sombra);
-    padding: 28px;
-    margin-bottom: 20px;
-  }
-  .card-titulo {
-    font-size: 13px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--texto-sec);
-    margin-bottom: 16px;
-  }
-  .busca-row {
-    display: flex;
-    gap: 10px;
-  }
-  input[type="number"], input[type="text"], input[type="email"] {
-    width: 100%;
-    padding: 10px 14px;
-    border: 1.5px solid var(--cinza-bord);
-    border-radius: 8px;
-    font-size: 15px;
-    font-family: var(--font);
-    color: var(--texto);
-    background: var(--branco);
-    transition: border-color 0.2s;
-    outline: none;
-  }
-  input:focus {
-    border-color: var(--azul-claro);
-  }
-  input.erro {
-    border-color: var(--vermelho);
-  }
-  .erro-msg {
-    font-size: 12px;
-    color: var(--vermelho);
-    margin-top: 5px;
-    display: none;
-  }
-  .erro-msg.visivel { display: block; }
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--azul-claro);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
 
-  /* BOTÕES */
-  .btn {
-    padding: 10px 22px;
-    border: none;
-    border-radius: 8px;
-    font-size: 15px;
-    font-family: var(--font);
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.18s, transform 0.1s;
-    white-space: nowrap;
-  }
-  .btn:active { transform: scale(0.97); }
-  .btn-primario {
-    background: var(--azul);
-    color: var(--branco);
-  }
-  .btn-primario:hover { background: var(--azul-claro); }
-  .btn-sucesso {
-    background: var(--verde);
-    color: var(--branco);
-  }
-  .btn-sucesso:hover { background: #0a6349; }
-  .btn-secundario {
-    background: var(--cinza-bg);
-    color: var(--texto);
-    border: 1.5px solid var(--cinza-bord);
-  }
-  .btn-secundario:hover { background: var(--cinza-bord); }
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-  }
+        .header-sub {
+            color: rgba(255,255,255,0.6);
+            font-size: 13px;
+        }
 
-  /* RESULTADO */
-  #resultado { display: none; }
+        /* MAIN */
+        main {
+            max-width: 680px;
+            margin: 40px auto;
+            padding: 0 16px;
+        }
 
-  .cliente-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 20px;
-    padding-bottom: 16px;
-    border-bottom: 1.5px solid var(--cinza-bord);
-  }
-  .avatar {
-    width: 48px; height: 48px;
-    background: var(--azul);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--branco);
-    font-size: 20px;
-    font-weight: 700;
-    flex-shrink: 0;
-  }
-  .cliente-nome { font-size: 20px; font-weight: 700; }
-  .cliente-codigo {
-    font-size: 13px;
-    color: var(--texto-sec);
-    margin-top: 2px;
-  }
+        /* BUSCA */
+        .card {
+            background: var(--branco);
+            border-radius: var(--radius);
+            box-shadow: var(--sombra);
+            padding: 28px;
+            margin-bottom: 20px;
+        }
 
-  .campos-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 20px;
-  }
-  @media (max-width: 500px) { .campos-grid { grid-template-columns: 1fr; } }
+        .card-titulo {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--texto-sec);
+            margin-bottom: 16px;
+        }
 
-  .campo-label {
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--texto-sec);
-    margin-bottom: 6px;
-  }
+        .busca-row {
+            display: flex;
+            gap: 10px;
+        }
 
-  /* MODO EDIÇÃO */
-  .acoes-row {
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-    margin-top: 4px;
-  }
+        input[type="number"], input[type="text"], input[type="email"] {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1.5px solid var(--cinza-bord);
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: var(--font);
+            color: var(--texto);
+            background: var(--branco);
+            transition: border-color 0.2s;
+            outline: none;
+        }
 
-  /* ALERTAS */
-  .alerta {
-    padding: 12px 16px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    display: none;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-  .alerta.visivel { display: flex; }
-  .alerta-erro { background: var(--vermelho-bg); color: var(--vermelho); border: 1px solid #f5c6c2; }
-  .alerta-sucesso { background: var(--verde-bg); color: var(--verde); border: 1px solid #b2ddd0; }
+        input:focus {
+            border-color: var(--azul-claro);
+        }
 
-  /* SPINNER */
-  .spinner {
-    display: none;
-    width: 18px; height: 18px;
-    border: 2.5px solid rgba(255,255,255,0.4);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    margin: 0 auto;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .carregando .spinner { display: inline-block; }
-  .carregando .btn-texto { display: none; }
-</style>
+        input.erro {
+            border-color: var(--vermelho);
+        }
+
+        .erro-msg {
+            font-size: 12px;
+            color: var(--vermelho);
+            margin-top: 5px;
+            display: none;
+        }
+
+            .erro-msg.visivel {
+                display: block;
+            }
+
+        /* BOTÕES */
+        .btn {
+            padding: 10px 22px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: var(--font);
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.18s, transform 0.1s;
+            white-space: nowrap;
+        }
+
+            .btn:active {
+                transform: scale(0.97);
+            }
+
+        .btn-primario {
+            background: var(--azul);
+            color: var(--branco);
+        }
+
+            .btn-primario:hover {
+                background: var(--azul-claro);
+            }
+
+        .btn-sucesso {
+            background: var(--verde);
+            color: var(--branco);
+        }
+
+            .btn-sucesso:hover {
+                background: #0a6349;
+            }
+
+        .btn-secundario {
+            background: var(--cinza-bg);
+            color: var(--texto);
+            border: 1.5px solid var(--cinza-bord);
+        }
+
+            .btn-secundario:hover {
+                background: var(--cinza-bord);
+            }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* RESULTADO */
+        #resultado {
+            display: none;
+        }
+
+        .cliente-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1.5px solid var(--cinza-bord);
+        }
+
+        .avatar {
+            width: 48px;
+            height: 48px;
+            background: var(--azul);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--branco);
+            font-size: 20px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .cliente-nome {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .cliente-codigo {
+            font-size: 13px;
+            color: var(--texto-sec);
+            margin-top: 2px;
+        }
+
+        .campos-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 500px) {
+            .campos-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .campo-label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--texto-sec);
+            margin-bottom: 6px;
+        }
+
+        /* MODO EDIÇÃO */
+        .acoes-row {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 4px;
+        }
+
+        /* ALERTAS */
+        .alerta {
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+            .alerta.visivel {
+                display: flex;
+            }
+
+        .alerta-erro {
+            background: var(--vermelho-bg);
+            color: var(--vermelho);
+            border: 1px solid #f5c6c2;
+        }
+
+        .alerta-sucesso {
+            background: var(--verde-bg);
+            color: var(--verde);
+            border: 1px solid #b2ddd0;
+        }
+
+        /* SPINNER */
+        .spinner {
+            display: none;
+            width: 18px;
+            height: 18px;
+            border: 2.5px solid rgba(255,255,255,0.4);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .carregando .spinner {
+            display: inline-block;
+        }
+
+        .carregando .btn-texto {
+            display: none;
+        }
+    </style>
 </head>
 <body>
 
-<header>
-  <div class="logo">
-    <div class="logo-icon">🏦</div>
-    CoopAlfa
-  </div>
-  <span class="header-sub">Sistema de Cadastro de Clientes</span>
-</header>
-
-<main>
-
-  <!-- ALERTA GLOBAL -->
-  <div id="alerta-global" class="alerta" role="alert"></div>
-
-  <!-- BUSCA -->
-  <div class="card">
-    <div class="card-titulo">Consultar cliente</div>
-    <div class="busca-row">
-      <div style="flex:1">
-        <input type="number" id="input-codigo" placeholder="Código do cliente (ex: 1001)"
-          min="1" max="9999" autocomplete="off"
-          onkeydown="if(event.key==='Enter') buscar()">
-        <div class="erro-msg" id="erro-codigo">Digite um código entre 1 e 9999.</div>
-      </div>
-      <button class="btn btn-primario" id="btn-buscar" onclick="buscar()">
-        <span class="btn-texto">Buscar</span>
-        <span class="spinner"></span>
-      </button>
-    </div>
-  </div>
-
-  <!-- RESULTADO -->
-  <div class="card" id="resultado">
-    <div class="cliente-header">
-      <div class="avatar" id="avatar-iniciais">?</div>
-      <div>
-        <div class="cliente-nome" id="display-nome">—</div>
-        <div class="cliente-codigo" id="display-codigo">Código: —</div>
-      </div>
-    </div>
-
-    <!-- CAMPOS VISUALIZAÇÃO -->
-    <div id="modo-visualizacao">
-      <div class="campos-grid">
-        <div>
-          <div class="campo-label">Telefone</div>
-          <div id="display-telefone" style="font-size:15px">—</div>
+    <header>
+        <div class="logo">
+            <div class="logo-icon">🏦</div>
+            CoopAlfa
         </div>
-        <div>
-          <div class="campo-label">E-mail</div>
-          <div id="display-email" style="font-size:15px; word-break:break-all">—</div>
+        <span class="header-sub">Sistema de Cadastro de Clientes</span>
+    </header>
+
+    <main>
+
+        <!-- ALERTA GLOBAL -->
+        <div id="alerta-global" class="alerta" role="alert"></div>
+
+        <!-- BUSCA -->
+        <div class="card">
+            <div class="card-titulo">Consultar cliente</div>
+            <div class="busca-row">
+                <div style="flex:1">
+                    <input type="number" id="input-codigo" placeholder="Código do cliente (ex: 1001)"
+                           min="1" max="9999" autocomplete="off"
+                           onkeydown="if(event.key==='Enter') buscar()">
+                    <div class="erro-msg" id="erro-codigo">Digite um código entre 1 e 9999.</div>
+                </div>
+                <button class="btn btn-primario" id="btn-buscar" onclick="buscar()">
+                    <span class="btn-texto">Buscar</span>
+                    <span class="spinner"></span>
+                </button>
+            </div>
         </div>
-      </div>
-      <div class="acoes-row">
-        <button class="btn btn-primario" onclick="iniciarEdicao()">Editar contato</button>
-      </div>
-    </div>
 
-    <!-- CAMPOS EDIÇÃO -->
-    <div id="modo-edicao" style="display:none">
-      <div class="campos-grid">
-        <div>
-          <div class="campo-label">Telefone</div>
-          <input type="text" id="input-telefone" placeholder="(XX) XXXXX-XXXX" maxlength="15"
-            oninput="mascararTelefone(this)">
-          <div class="erro-msg" id="erro-telefone">Use o formato (XX) XXXXX-XXXX.</div>
+        <!-- RESULTADO -->
+        <div class="card" id="resultado">
+            <div class="cliente-header">
+                <div class="avatar" id="avatar-iniciais">?</div>
+                <div>
+                    <div class="cliente-nome" id="display-nome">—</div>
+                    <div class="cliente-codigo" id="display-codigo">Código: —</div>
+                </div>
+            </div>
+
+            <!-- CAMPOS VISUALIZAÇÃO -->
+            <div id="modo-visualizacao">
+                <div class="campos-grid">
+                    <div>
+                        <div class="campo-label">Telefone</div>
+                        <div id="display-telefone" style="font-size:15px">—</div>
+                    </div>
+                    <div>
+                        <div class="campo-label">E-mail</div>
+                        <div id="display-email" style="font-size:15px; word-break:break-all">—</div>
+                    </div>
+                </div>
+                <div class="acoes-row">
+                    <button class="btn btn-primario" onclick="iniciarEdicao()">Editar contato</button>
+                </div>
+            </div>
+
+            <!-- CAMPOS EDIÇÃO -->
+            <div id="modo-edicao" style="display:none">
+                <div class="campos-grid">
+                    <div>
+                        <div class="campo-label">Telefone</div>
+                        <input type="text" id="input-telefone" placeholder="(XX) XXXXX-XXXX" maxlength="15"
+                               oninput="mascararTelefone(this)">
+                        <div class="erro-msg" id="erro-telefone">Use o formato (XX) XXXXX-XXXX.</div>
+                    </div>
+                    <div>
+                        <div class="campo-label">E-mail</div>
+                        <input type="email" id="input-email" placeholder="nome@email.com">
+                        <div class="erro-msg" id="erro-email">Digite um e-mail válido.</div>
+                    </div>
+                </div>
+                <div class="acoes-row">
+                    <button class="btn btn-secundario" onclick="cancelarEdicao()">Cancelar</button>
+                    <button class="btn btn-sucesso" id="btn-salvar" onclick="salvar()">
+                        <span class="btn-texto">Salvar alterações</span>
+                        <span class="spinner"></span>
+                    </button>
+                </div>
+            </div>
         </div>
-        <div>
-          <div class="campo-label">E-mail</div>
-          <input type="email" id="input-email" placeholder="nome@email.com">
-          <div class="erro-msg" id="erro-email">Digite um e-mail válido.</div>
-        </div>
-      </div>
-      <div class="acoes-row">
-        <button class="btn btn-secundario" onclick="cancelarEdicao()">Cancelar</button>
-        <button class="btn btn-sucesso" id="btn-salvar" onclick="salvar()">
-          <span class="btn-texto">Salvar alterações</span>
-          <span class="spinner"></span>
-        </button>
-      </div>
-    </div>
-  </div>
 
-</main>
+    </main>
 
-<script>
-  const API = '';  // vazio = mesma origem (API serve o HTML)
-  let clienteAtual = null;
+    <script>
+        const API = '';  // vazio = mesma origem (API serve o HTML)
+        let clienteAtual = null;
 
-  // ── BUSCAR ────────────────────────────────────────────────
-  async function buscar() {
-    const codigo = parseInt(document.getElementById('input-codigo').value);
-    const erroCodigo = document.getElementById('erro-codigo');
+        // ── BUSCAR ────────────────────────────────────────────────
+        async function buscar() {
+            const codigo = parseInt(document.getElementById('input-codigo').value);
+            const erroCodigo = document.getElementById('erro-codigo');
 
-    if (!codigo || codigo < 1 || codigo > 9999) {
-      erroCodigo.classList.add('visivel');
-      document.getElementById('input-codigo').classList.add('erro');
-      return;
-    }
-    erroCodigo.classList.remove('visivel');
-    document.getElementById('input-codigo').classList.remove('erro');
+            if (!codigo || codigo < 1 || codigo > 9999) {
+                erroCodigo.classList.add('visivel');
+                document.getElementById('input-codigo').classList.add('erro');
+                return;
+            }
+            erroCodigo.classList.remove('visivel');
+            document.getElementById('input-codigo').classList.remove('erro');
 
-    const btn = document.getElementById('btn-buscar');
-    btn.disabled = true;
-    btn.classList.add('carregando');
-    esconderAlerta();
-    esconderResultado();
+            const btn = document.getElementById('btn-buscar');
+            btn.disabled = true;
+            btn.classList.add('carregando');
+            esconderAlerta();
+            esconderResultado();
 
-    try {
-      const res = await fetch(`${API}/api/clientes/${codigo}`);
-      const json = await res.json();
+            try {
+                const res = await fetch(`${API}/api/clientes/${codigo}`);
+                const json = await res.json();
 
-      if (res.ok && json.sucesso) {
-        clienteAtual = json.dados;
-        exibirCliente(json.dados);
-      } else if (res.status === 404) {
-        mostrarAlerta('erro', `Cliente com código ${codigo} não encontrado.`);
-      } else {
-        mostrarAlerta('erro', json.mensagem || 'Erro ao consultar cliente.');
-      }
-    } catch (e) {
-      mostrarAlerta('erro', 'Não foi possível conectar à API. Verifique se o servidor está rodando.');
-    } finally {
-      btn.disabled = false;
-      btn.classList.remove('carregando');
-    }
-  }
-
-  // ── EXIBIR CLIENTE ────────────────────────────────────────
-  function exibirCliente(c) {
-    const iniciais = c.nome.trim().split(' ')
-      .filter(Boolean).slice(0, 2)
-      .map(p => p[0].toUpperCase()).join('');
-
-    document.getElementById('avatar-iniciais').textContent = iniciais || '?';
-    document.getElementById('display-nome').textContent    = c.nome;
-    document.getElementById('display-codigo').textContent  = `Código: ${String(c.codigo).padStart(4,'0')}`;
-    document.getElementById('display-telefone').textContent = c.telefone || '—';
-    document.getElementById('display-email').textContent    = c.email    || '—';
-
-    document.getElementById('modo-visualizacao').style.display = '';
-    document.getElementById('modo-edicao').style.display = 'none';
-    document.getElementById('resultado').style.display = '';
-  }
-
-  // ── EDIÇÃO ────────────────────────────────────────────────
-  function iniciarEdicao() {
-    document.getElementById('input-telefone').value = clienteAtual.telefone || '';
-    document.getElementById('input-email').value    = clienteAtual.email    || '';
-    document.getElementById('modo-visualizacao').style.display = 'none';
-    document.getElementById('modo-edicao').style.display = '';
-    document.getElementById('input-telefone').focus();
-  }
-
-  function cancelarEdicao() {
-    document.getElementById('modo-visualizacao').style.display = '';
-    document.getElementById('modo-edicao').style.display = 'none';
-    limparErrosEdicao();
-  }
-
-  // ── SALVAR ────────────────────────────────────────────────
-  async function salvar() {
-    const telefone = document.getElementById('input-telefone').value.trim();
-    const email    = document.getElementById('input-email').value.trim();
-    let valido = true;
-
-    const telRegex   = /^\(\d{2}\) \d{4,5}-\d{4}$/;
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (telefone && !telRegex.test(telefone)) {
-      document.getElementById('erro-telefone').classList.add('visivel');
-      document.getElementById('input-telefone').classList.add('erro');
-      valido = false;
-    } else {
-      document.getElementById('erro-telefone').classList.remove('visivel');
-      document.getElementById('input-telefone').classList.remove('erro');
-    }
-
-    if (email && !emailRegex.test(email)) {
-      document.getElementById('erro-email').classList.add('visivel');
-      document.getElementById('input-email').classList.add('erro');
-      valido = false;
-    } else {
-      document.getElementById('erro-email').classList.remove('visivel');
-      document.getElementById('input-email').classList.remove('erro');
-    }
-
-    if (!valido) return;
-
-    const btn = document.getElementById('btn-salvar');
-    btn.disabled = true;
-    btn.classList.add('carregando');
-
-    try {
-      const res = await fetch(
-        `${API}/api/clientes/${clienteAtual.codigo}/contato`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ telefone, email })
+                if (res.ok && json.sucesso) {
+                    clienteAtual = json.dados;
+                    exibirCliente(json.dados);
+                } else if (res.status === 404) {
+                    mostrarAlerta('erro', `Cliente com código ${codigo} não encontrado.`);
+                } else {
+                    mostrarAlerta('erro', json.mensagem || 'Erro ao consultar cliente.');
+                }
+            } catch (e) {
+                mostrarAlerta('erro', 'Não foi possível conectar à API. Verifique se o servidor está rodando.');
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('carregando');
+            }
         }
-      );
-      const json = await res.json();
 
-      if (res.ok && json.sucesso) {
-        clienteAtual = json.dados;
-        exibirCliente(json.dados);
-        mostrarAlerta('sucesso', 'Contato atualizado com sucesso!');
-      } else {
-        mostrarAlerta('erro', json.mensagem || 'Erro ao salvar alterações.');
-      }
-    } catch (e) {
-      mostrarAlerta('erro', 'Não foi possível conectar à API.');
-    } finally {
-      btn.disabled = false;
-      btn.classList.remove('carregando');
-    }
-  }
+        // ── EXIBIR CLIENTE ────────────────────────────────────────
+        function exibirCliente(c) {
+            const iniciais = c.nome.trim().split(' ')
+                .filter(Boolean).slice(0, 2)
+                .map(p => p[0].toUpperCase()).join('');
 
-  // ── MÁSCARA TELEFONE ──────────────────────────────────────
-  function mascararTelefone(input) {
-    let v = input.value.replace(/\D/g,'');
-    if (v.length > 11) v = v.slice(0,11);
-    if (v.length <= 10)
-      v = v.replace(/^(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3');
-    else
-      v = v.replace(/^(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3');
-    input.value = v;
-  }
+            document.getElementById('avatar-iniciais').textContent = iniciais || '?';
+            document.getElementById('display-nome').textContent = c.nome;
+            document.getElementById('display-codigo').textContent = `Código: ${String(c.codigo).padStart(4, '0')}`;
+            document.getElementById('display-telefone').textContent = c.telefone || '—';
+            document.getElementById('display-email').textContent = c.email || '—';
 
-  // ── HELPERS ───────────────────────────────────────────────
-  function mostrarAlerta(tipo, msg) {
-    const el = document.getElementById('alerta-global');
-    el.className = `alerta visivel alerta-${tipo === 'erro' ? 'erro' : 'sucesso'}`;
-    el.textContent = tipo === 'erro' ? '⚠ ' + msg : '✓ ' + msg;
-  }
-  function esconderAlerta() {
-    document.getElementById('alerta-global').className = 'alerta';
-  }
-  function esconderResultado() {
-    document.getElementById('resultado').style.display = 'none';
-  }
-  function limparErrosEdicao() {
-    ['erro-telefone','erro-email'].forEach(id =>
-      document.getElementById(id).classList.remove('visivel'));
-    ['input-telefone','input-email'].forEach(id =>
-      document.getElementById(id).classList.remove('erro'));
-  }
-</script>
+            document.getElementById('modo-visualizacao').style.display = '';
+            document.getElementById('modo-edicao').style.display = 'none';
+            document.getElementById('resultado').style.display = 'block';
+        }
+
+        // ── EDIÇÃO ────────────────────────────────────────────────
+        function iniciarEdicao() {
+            document.getElementById('input-telefone').value = clienteAtual.telefone || '';
+            document.getElementById('input-email').value = clienteAtual.email || '';
+            document.getElementById('modo-visualizacao').style.display = 'none';
+            document.getElementById('modo-edicao').style.display = '';
+            document.getElementById('input-telefone').focus();
+        }
+
+        function cancelarEdicao() {
+            document.getElementById('modo-visualizacao').style.display = '';
+            document.getElementById('modo-edicao').style.display = 'none';
+            limparErrosEdicao();
+        }
+
+        // ── SALVAR ────────────────────────────────────────────────
+        async function salvar() {
+            const telefone = document.getElementById('input-telefone').value.trim();
+            const email = document.getElementById('input-email').value.trim();
+            let valido = true;
+
+            const telRegex = /^\(\d{2}\) \d{4,5}-\d{4}$/;
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+            if (telefone && !telRegex.test(telefone)) {
+                document.getElementById('erro-telefone').classList.add('visivel');
+                document.getElementById('input-telefone').classList.add('erro');
+                valido = false;
+            } else {
+                document.getElementById('erro-telefone').classList.remove('visivel');
+                document.getElementById('input-telefone').classList.remove('erro');
+            }
+
+            if (email && !emailRegex.test(email)) {
+                document.getElementById('erro-email').classList.add('visivel');
+                document.getElementById('input-email').classList.add('erro');
+                valido = false;
+            } else {
+                document.getElementById('erro-email').classList.remove('visivel');
+                document.getElementById('input-email').classList.remove('erro');
+            }
+
+            if (!valido) return;
+
+            const btn = document.getElementById('btn-salvar');
+            btn.disabled = true;
+            btn.classList.add('carregando');
+
+            try {
+                const res = await fetch(
+                    `${API}/api/clientes/${clienteAtual.codigo}/contato`,
+                    {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ telefone, email })
+                    }
+                );
+                const json = await res.json();
+
+                if (res.ok && json.sucesso) {
+                    clienteAtual = json.dados;
+                    exibirCliente(json.dados);
+                    mostrarAlerta('sucesso', 'Contato atualizado com sucesso!');
+                } else {
+                    mostrarAlerta('erro', json.mensagem || 'Erro ao salvar alterações.');
+                }
+            } catch (e) {
+                mostrarAlerta('erro', 'Não foi possível conectar à API.');
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('carregando');
+            }
+        }
+
+        // ── MÁSCARA TELEFONE ──────────────────────────────────────
+        function mascararTelefone(input) {
+            let v = input.value.replace(/\D/g, '');
+            if (v.length > 11) v = v.slice(0, 11);
+            if (v.length <= 10)
+                v = v.replace(/^(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3');
+            else
+                v = v.replace(/^(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3');
+            input.value = v;
+        }
+
+        // ── HELPERS ───────────────────────────────────────────────
+        function mostrarAlerta(tipo, msg) {
+            const el = document.getElementById('alerta-global');
+            el.className = `alerta visivel alerta-${tipo === 'erro' ? 'erro' : 'sucesso'}`;
+            el.textContent = tipo === 'erro' ? '⚠ ' + msg : '✓ ' + msg;
+        }
+        function esconderAlerta() {
+            document.getElementById('alerta-global').className = 'alerta';
+        }
+        function esconderResultado() {
+            document.getElementById('resultado').style.display = 'none';
+        }
+        function limparErrosEdicao() {
+            ['erro-telefone', 'erro-email'].forEach(id =>
+                document.getElementById(id).classList.remove('visivel'));
+            ['input-telefone', 'input-email'].forEach(id =>
+                document.getElementById(id).classList.remove('erro'));
+        }
+    </script>
 </body>
 </html>
