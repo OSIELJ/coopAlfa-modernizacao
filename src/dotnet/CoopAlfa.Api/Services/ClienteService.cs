@@ -6,8 +6,11 @@ namespace CoopAlfa.Api.Services;
 
 /// <summary>
 /// Servico que integra .NET ao COBOL via processo separado.
-/// Grava a requisicao em REQUEST.DAT, executa CLICORE.exe,
-/// e le a resposta de RESPONSE.DAT.
+/// O CLICORE.exe acessa o DB2 via wrapper C (DB2HELPER.dll) e ODBC.
+///
+/// Fluxo: API .NET -> REQUEST.DAT -> CLICORE.exe
+///        -> CALL "DBCONECT" -> DB2HELPER.dll -> ODBC -> DB2
+///        -> RESPONSE.DAT -> API .NET
 /// </summary>
 public class ClienteService : IClienteService
 {
@@ -21,7 +24,6 @@ public class ClienteService : IClienteService
     {
         lock (_lock)
         {
-            // Layout: operacao(1) + codigo(4) + nome(40) + telefone(15) + email(50)
             var request = new StringBuilder();
             request.Append(operacao.PadRight(1)[..1]);
             request.Append(codigo.ToString().PadLeft(4, '0'));
@@ -32,7 +34,8 @@ public class ClienteService : IClienteService
             var requestPath  = Path.Combine(CobolDir, "REQUEST.DAT");
             var responsePath = Path.Combine(CobolDir, "RESPONSE.DAT");
 
-            File.WriteAllText(requestPath, request.ToString(), Encoding.ASCII);
+            File.WriteAllText(requestPath, request.ToString(),
+                Encoding.ASCII);
 
             var psi = new ProcessStartInfo
             {
@@ -42,14 +45,21 @@ public class ClienteService : IClienteService
                 CreateNoWindow   = true
             };
 
+            // Necessário para o GnuCOBOL encontrar a DB2HELPER.dll
+            psi.Environment["COB_PRE_LOAD"]    = "DB2HELPER";
+            psi.Environment["COB_LIBRARY_PATH"] = CobolDir;
+
             using (var proc = Process.Start(psi))
             {
-                proc!.WaitForExit(15000);
+                proc!.WaitForExit(30000);
             }
 
             if (!File.Exists(responsePath))
-                return new ResponseCobol { ReturnCode = "02",
-                    Mensagem = "Erro: resposta nao gerada" };
+                return new ResponseCobol
+                {
+                    ReturnCode = "02",
+                    Mensagem   = "Erro: resposta nao gerada"
+                };
 
             var linha = File.ReadAllText(responsePath, Encoding.ASCII)
                             .Replace("\r", "").Replace("\n", "")
