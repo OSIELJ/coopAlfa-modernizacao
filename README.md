@@ -2,24 +2,33 @@
 
 Solução de modernização do cadastro de clientes da Cooperativa Financeira Alfa, desenvolvida como projeto final do programa Acelera Maker (Montreal).
 
-O sistema expõe um núcleo COBOL legado como API REST em .NET, permitindo que atendentes consultem, cadastrem e atualizem dados de clientes por uma interface web moderna — sem substituir o processamento legado.
+O sistema expõe um núcleo COBOL legado como API REST em .NET, permitindo que atendentes consultem, cadastrem e atualizem dados de clientes por uma interface web moderna — sem substituir o processamento legado. O COBOL persiste os dados diretamente no **IBM DB2** via ODBC.
 
 ---
 
 ## Demonstração
 
 ### Consultar Cliente
-
-<img width="708" height="380" alt="CoopAlfa — consulta_cliente" src="https://github.com/user-attachments/assets/22bc0efb-fea7-427e-a8db-8da711e8c7f6" />
+![Consultar Cliente](docs/gifs/CoopAlfa___consulta_cliente.gif)
 
 ### Criar Cliente
-
-<img width="708" height="380" alt="CoopAlfa — criar_cliente" src="https://github.com/user-attachments/assets/d885dfd9-aec6-45a3-adac-f94902d1f3cf" />
+![Criar Cliente](docs/gifs/CoopAlfa___criar_cliente.gif)
 
 ### Editar Contato
+![Editar Contato](docs/gifs/CoopAlfa___editar_cliente.gif)
 
-<img width="708" height="380" alt="CoopAlfa — editar_cliente" src="https://github.com/user-attachments/assets/5d9be405-d4f6-4646-9471-acc439bd28d5" />
+---
 
+## Evidências de Funcionamento
+
+### API retornando JSON (navegador)
+![API JSON](docs/evidencias/api_json.png)
+
+### Swagger — GET /api/clientes/1001
+![Swagger GET](docs/evidencias/swagger_get.png)
+
+### Dados persistidos no DB2
+![DB2 SELECT](docs/evidencias/db2_select.png)
 
 ---
 
@@ -29,39 +38,64 @@ O sistema expõe um núcleo COBOL legado como API REST em .NET, permitindo que a
 Interface HTML (atendente)
         ↓ HTTP/REST
   API REST — ASP.NET Core (.NET 10)
-        ↓ Processo separado (arquivo entrada/saída)
+        ↓ Processo separado (REQUEST.DAT / RESPONSE.DAT)
   Núcleo COBOL — CLICORE.exe (GnuCOBOL 3.2 64 bits)
-        ↓ I/O
-  Arquivo indexado — CLIENTES.DAT
+        ↓ CALL "DBCONECT" / "DBSELECT" / "DBINSERT" / "DBUPDATE"
+  Wrapper C — DB2HELPER.o (ODBC)
+        ↓ SQLDriverConnect / SQLExecDirect
+  IBM DB2 (Docker) — tabela DB2INST1.CLIENTES_COOPALF
 ```
 
-O .NET grava a requisição em `REQUEST.DAT`, executa o `CLICORE.exe`, e lê a resposta de `RESPONSE.DAT`. Este padrão reproduz a integração batch com mainframe legado, onde aplicações consumidoras interagem com o COBOL através de datasets.
+O .NET grava a requisição em `REQUEST.DAT`, executa o `CLICORE.exe`, que chama funções C do wrapper `DB2HELPER` para acessar o DB2 via ODBC, e devolve a resposta em `RESPONSE.DAT`.
 
 Detalhes completos em [`docs/arquitetura.md`](docs/arquitetura.md).
-
----
-
-## Evidências de Funcionamento
-
-### API retornando JSON (navegador)
-
-<img width="1605" height="229" alt="Captura de tela 2026-07-08 184057" src="https://github.com/user-attachments/assets/c36b339c-05b2-4b51-8103-fc4c38bef73b" />
-
-### Swagger — GET /api/clientes/1001
-
-<img width="1919" height="1032" alt="Captura de tela 2026-07-08 183844" src="https://github.com/user-attachments/assets/35c24634-bb91-46a0-8c0a-e43348ef5ba5" />
-
-### Interface — cliente não encontrado
-
-<img width="1919" height="1029" alt="Captura de tela 2026-07-08 185051" src="https://github.com/user-attachments/assets/807227f1-777c-4724-a8c7-3542c37ada7d" />
 
 ---
 
 ## Pré-requisitos
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- [GnuCOBOL 3.2 64 bits](https://github.com/OCamlPro/superbol-artefacts/releases/download/gnucobol-3.2-aio-20240402/gnucobol-3.2-aio-20240402-user.msi) (SuperBOL All-in-One para Windows)
+- [GnuCOBOL 3.2 64 bits](https://github.com/OCamlPro/superbol-artefacts/releases/download/gnucobol-3.2-aio-20240402/gnucobol-3.2-aio-20240402-user.msi) (SuperBOL All-in-One)
+- IBM DB2 Community Edition (Docker)
+- IBM DB2 ODBC Driver (CLI Driver)
+- Docker Desktop
 - Git
+
+---
+
+## Configuração do DB2
+
+### 1. Sobe o container DB2
+
+```cmd
+docker run -itd --name db2 --privileged=true -p 50000:50000 -e LICENSE=accept -e DB2INST1_PASSWORD=Db2senha2026 -e DBNAME=BANCO icr.io/db2_community/db2
+```
+
+### 2. Cria a tabela
+
+```cmd
+docker exec -it db2 bash -c "su - db2inst1 -c 'db2start && db2 connect to BANCO && db2 \"CREATE TABLE CLIENTES_COOPALF (CLI_CODIGO INTEGER NOT NULL, CLI_NOME VARCHAR(40) NOT NULL, CLI_TELEFONE VARCHAR(15), CLI_EMAIL VARCHAR(50), PRIMARY KEY (CLI_CODIGO))\"'"
+```
+
+### 3. Configura o DSN ODBC
+
+Abre o **Administrador de Fonte de Dados ODBC** (`odbcad32`) e cria um DSN de usuário:
+
+- **Data source name:** `BANCODSN`
+- **Driver:** IBM DB2 ODBC DRIVER
+- **User ID:** `db2inst1`
+- **Password:** `Db2senha2026`
+- **Database:** `BANCO`
+- **Hostname:** `localhost`
+- **Port:** `50000`
+
+### 4. Inicia o DB2 corretamente
+
+O DB2 Community no Docker requer `ipclean` antes do `db2start` para o TCP funcionar:
+
+```cmd
+docker exec -it db2 bash -c "su - db2inst1 -c 'db2stop force; ipclean -a; db2start'"
+```
 
 ---
 
@@ -74,19 +108,16 @@ git clone https://github.com/OSIELJ/coopAlfa-modernizacao.git
 cd coopAlfa-modernizacao
 ```
 
-### 2. Compile o núcleo COBOL
+### 2. Compila o wrapper C
 
 ```cmd
-"C:\Users\%USERNAME%\AppData\Local\GnuCOBOL\bin\cobc.exe" -x -fimplicit-init -I "src\cobol\copybook" src\cobol\CLICORE.cbl -o src\cobol\build\CLICORE.exe
+"C:\Users\%USERNAME%\AppData\Local\GnuCOBOL\mingw64\bin\gcc.exe" -c src\cobol\DB2HELPER.c -o src\cobol\build\DB2HELPER.o -I"C:\Program Files\IBM\SQLLIB\include"
 ```
 
-### 3. Popula os dados iniciais
+### 3. Compila o COBOL linkando com o wrapper
 
 ```cmd
-"C:\Users\%USERNAME%\AppData\Local\GnuCOBOL\bin\cobc.exe" -x -fimplicit-init -I "src\cobol\copybook" src\cobol\CLISEED.cbl -o src\cobol\build\CLISEED.exe
-cd src\cobol\build
-CLISEED.exe
-cd ..\..\..
+"C:\Users\%USERNAME%\AppData\Local\GnuCOBOL\bin\cobc.exe" -x -fimplicit-init -I "src\cobol\copybook" src\cobol\CLICORE.cbl src\cobol\build\DB2HELPER.o -L "C:\Program Files\IBM\SQLLIB\lib" -lodbc32 -o src\cobol\build\CLICORE.exe
 ```
 
 ### 4. Copia os arquivos COBOL para a API
@@ -94,11 +125,10 @@ cd ..\..\..
 ```cmd
 mkdir src\dotnet\CoopAlfa.Api\cobol
 copy src\cobol\build\CLICORE.exe src\dotnet\CoopAlfa.Api\cobol\
-copy src\cobol\build\CLIENTES.DAT src\dotnet\CoopAlfa.Api\cobol\
 copy "C:\Users\%USERNAME%\AppData\Local\GnuCOBOL\bin\*.dll" src\dotnet\CoopAlfa.Api\cobol\
 ```
 
-### 5. Execute a API
+### 5. Executa a API
 
 ```cmd
 cd src\dotnet\CoopAlfa.Api
@@ -107,13 +137,13 @@ dotnet run
 
 A API sobe em `http://localhost:5125`.
 
-### 6. Acesse a interface do atendente
+### 6. Acessa a interface
 
 ```
 http://localhost:5125/index.html
 ```
 
-### 7. Acesse o Swagger
+### 7. Acessa o Swagger
 
 ```
 http://localhost:5125/swagger
@@ -162,18 +192,6 @@ Content-Type: application/json
 }
 ```
 
-### Exemplo — Atualizar contato
-
-```http
-PUT /api/clientes/1001/contato
-Content-Type: application/json
-
-{
-  "telefone": "(11) 98888-5678",
-  "email": "maria.nova@email.com"
-}
-```
-
 ---
 
 ## Como rodar os testes
@@ -183,22 +201,17 @@ cd src\dotnet
 dotnet test CoopAlfa.slnx
 ```
 
-Resultado esperado:
-```
-Resumo do teste: total: 17; falhou: 0; bem-sucedido: 17; ignorado: 0
-```
-
 ---
 
 ## Qualidade de código
 
-Análise com **SonarQube Community** (Docker local). Resultado atual: **Quality Gate Passed** — 0 Bugs, 0 Vulnerabilities, 0 Code Smells.
+Análise com **SonarQube Community** (Docker local). Quality Gate: **Passed** — 0 Bugs, 0 Vulnerabilities, 0 Code Smells.
 
 ---
 
 ## CI/CD
 
-Pipeline no GitHub Actions (`.github/workflows/build.yml`). Executa build e testes a cada push nas branches `main` e `dev`.
+Pipeline no GitHub Actions (`.github/workflows/build.yml`). Executa build e testes a cada push.
 
 ---
 
@@ -210,6 +223,7 @@ coopAlfa-modernizacao/
 │   └── build.yml              ← CI/CD GitHub Actions
 ├── docs/
 │   ├── gifs/                  ← GIFs de demonstração
+│   ├── evidencias/            ← Capturas de tela
 │   ├── arquitetura.md
 │   ├── plano-de-testes.md
 │   └── relatorio-ia.md
@@ -219,9 +233,9 @@ coopAlfa-modernizacao/
 │   │   │   └── CLIENTE.cpy    ← Contrato de dados
 │   │   ├── build/
 │   │   │   ├── CLICORE.exe    ← Núcleo COBOL compilado
-│   │   │   └── CLIENTES.DAT   ← Arquivo indexado legado
+│   │   │   └── DB2HELPER.o    ← Wrapper C compilado
 │   │   ├── CLICORE.cbl        ← Código-fonte COBOL
-│   │   └── CLISEED.cbl        ← Populador de dados iniciais
+│   │   └── DB2HELPER.c        ← Wrapper C para ODBC/DB2
 │   └── dotnet/
 │       ├── CoopAlfa.Api/
 │       │   ├── Controllers/   ← Endpoints REST
@@ -229,9 +243,7 @@ coopAlfa-modernizacao/
 │       │   ├── Services/      ← Integração COBOL via processo
 │       │   ├── cobol/         ← Runtime COBOL (gerado localmente)
 │       │   └── wwwroot/       ← Interface do atendente (HTML)
-│       └── CoopAlfa.Tests/
-│           └── ClientesControllerTests.cs ← 17 testes xUnit
-├── build.cmd                  ← Script de build do COBOL
+│       └── CoopAlfa.Tests/    ← Testes xUnit
 └── README.md
 ```
 
@@ -251,12 +263,14 @@ coopAlfa-modernizacao/
 
 | Tecnologia | Uso |
 |-----------|-----|
-| GnuCOBOL 3.2 (64 bits) | Núcleo legado — regras e persistência |
+| GnuCOBOL 3.2 (64 bits) | Núcleo legado — regras de negócio |
+| Wrapper C + ODBC | Ponte entre COBOL e DB2 |
+| IBM DB2 Community | Persistência de dados |
 | ASP.NET Core (.NET 10) | API REST e interface do atendente |
 | xUnit + Moq | Testes automatizados |
 | SonarQube Community | Análise de qualidade de código |
 | GitHub Actions | CI/CD |
-| Docker | SonarQube local |
+| Docker | DB2 e SonarQube |
 
 ---
 
