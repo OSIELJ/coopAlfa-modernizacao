@@ -9,26 +9,60 @@ O sistema expõe um núcleo COBOL legado como API REST em .NET, permitindo que a
 ## Demonstração
 
 ### Consultar Cliente
-![Consultar Cliente](docs/gifs/CoopAlfa___consulta_cliente.gif)
+
+<img width="708" height="380" alt="CoopAlfa — consulta_cliente" src="https://github.com/user-attachments/assets/17a50207-3f76-46b8-bfbf-17b5ae35bd2d" />
 
 ### Criar Cliente
-![Criar Cliente](docs/gifs/CoopAlfa___criar_cliente.gif)
+
+<img width="708" height="380" alt="CoopAlfa — criar_cliente" src="https://github.com/user-attachments/assets/4624b005-3d4c-4c8c-b7d6-e649583d593d" />
 
 ### Editar Contato
-![Editar Contato](docs/gifs/CoopAlfa___editar_cliente.gif)
+
+<img width="708" height="380" alt="CoopAlfa — editar_cliente" src="https://github.com/user-attachments/assets/e648dee2-b619-4c24-8055-62e1f8d9111a" />
 
 ---
 
 ## Evidências de Funcionamento
 
 ### API retornando JSON (navegador)
-![API JSON](docs/evidencias/api_json.png)
+<img width="1605" height="229" alt="Captura de tela 2026-07-08 184057" src="https://github.com/user-attachments/assets/cfe041eb-31c7-453d-8211-b8f872ca06ef" />
+
 
 ### Swagger — GET /api/clientes/1001
-![Swagger GET](docs/evidencias/swagger_get.png)
+<img width="1919" height="1032" alt="Captura de tela 2026-07-08 183844" src="https://github.com/user-attachments/assets/f0c06fea-ecfe-4f56-94f4-8f704412ba0c" />
 
-### Dados persistidos no DB2
-![DB2 SELECT](docs/evidencias/db2_select.png)
+
+## Evidências de Funcionamento
+
+O fluxo abaixo demonstra o ciclo completo — cadastro, persistência, consulta e atualização — com verificação direta na tabela do DB2 a cada etapa.
+
+### 1. Cadastro de cliente pela interface
+
+<img width="783" alt="Formulário de cadastro preenchido" src="https://github.com/user-attachments/assets/a3b6357d-c925-4d97-bdce-1d837ec28e1b" />
+
+### 2. Confirmação do cadastro
+
+<img width="715" alt="Cliente cadastrado com sucesso" src="https://github.com/user-attachments/assets/d9feb0e7-cf23-405d-9e90-db6fb92ce677" />
+
+### 3. Registro persistido no DB2
+
+O cliente 7070 aparece na tabela `DB2INST1.CLIENTES_COOPALF` com telefone `(88) 88888-8888`.
+
+<img width="1101" alt="SELECT no DB2 após cadastro" src="https://github.com/user-attachments/assets/ac68b751-7108-474e-a692-d5eef8a75017" />
+
+### 4. Consulta do cliente recém-cadastrado
+
+<img width="660" alt="Consulta do cliente 7070" src="https://github.com/user-attachments/assets/4deb4ae3-9f26-4eb9-823e-b37818b20a46" />
+
+### 5. Atualização do contato
+
+Telefone alterado de `(88) 88888-8888` para `(88) 88888-9999`.
+
+<img width="704" alt="Contato atualizado com sucesso" src="https://github.com/user-attachments/assets/8be38a6b-f1ab-4984-a6ee-d05be9f9bc18" />
+
+### 6. Atualização refletida no DB2
+
+<img width="1103" alt="SELECT no DB2 após atualização" src="https://github.com/user-attachments/assets/1f98d85a-0292-45d6-a5f7-32a0f65c60eb" />
 
 ---
 
