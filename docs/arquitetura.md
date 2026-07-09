@@ -14,11 +14,9 @@ O objetivo deste projeto **não é substituir o sistema legado**, mas sim expô-
 
 ## 2. Arquitetura Escolhida
 
-### Padrão: Integração por Processo Separado sobre Núcleo Legado
+### Padrão: Integração por Processo Separado + COBOL acessando DB2 via ODBC
 
-A solução adota o padrão de modernização **Strangler Fig**, onde o sistema legado é encapsulado por uma camada moderna sem ser substituído. O COBOL permanece como núcleo de processamento e persistência, enquanto o .NET expõe suas funcionalidades como uma API REST.
-
-A comunicação entre .NET e COBOL é feita via **processo separado com troca de dados por arquivo** — reproduzindo fielmente o padrão de integração batch do mainframe, onde aplicações consumidoras interagem com o legado COBOL através de datasets.
+A solução adota o padrão de modernização **Strangler Fig**, onde o sistema legado é encapsulado por uma camada moderna sem ser substituído. O COBOL permanece como núcleo de processamento e **é ele quem acessa o banco de dados**, enquanto o .NET expõe suas funcionalidades como uma API REST.
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -31,8 +29,9 @@ A comunicação entre .NET e COBOL é feita via **processo separado com troca de
 │            (ASP.NET Core - .NET 10)                  │
 │  ┌─────────────────────────────────────────────┐    │
 │  │           ClientesController                │    │
-│  │  GET /api/clientes/{codigo}                 │    │
-│  │  PUT /api/clientes/{codigo}/contato         │    │
+│  │  GET  /api/clientes/{codigo}                │    │
+│  │  POST /api/clientes                         │    │
+│  │  PUT  /api/clientes/{codigo}/contato        │    │
 │  └──────────────────┬──────────────────────────┘    │
 │  ┌──────────────────▼──────────────────────────┐    │
 │  │           ClienteService                    │    │
@@ -46,14 +45,21 @@ A comunicação entre .NET e COBOL é feita via **processo separado com troca de
 │                 CLICORE.exe                          │
 │            (GnuCOBOL 3.2 64 bits)                   │
 │                                                      │
-│  1. Lê REQUEST.DAT  (operação + código + dados)      │
-│  2. Processa no arquivo indexado CLIENTES.DAT        │
-│  3. Grava RESPONSE.DAT (return code + dados)         │
-└──────────────────────┬──────────────────────────────┘
-                       │ I/O
-┌──────────────────────▼──────────────────────────────┐
-│                 CLIENTES.DAT                         │
-│     (Arquivo Indexado Berkeley DB - Persistência)    │
+│  CALL "DBCONECT" / "DBSELECT" / "DBINSERT" /        │
+│       "DBUPDATE" / "DBDISCON"                       │
+└─────────────────────┬───────────────────────────────┘
+                      │ Linkagem estática (.o)
+┌─────────────────────▼───────────────────────────────┐
+│                 DB2HELPER.o                          │
+│         (Wrapper C — camada ODBC)                    │
+│                                                      │
+│  SQLDriverConnect, SQLExecDirect, SQLFetch,         │
+│  SQLGetData, SQLEndTran (commit)                    │
+└─────────────────────┬───────────────────────────────┘
+                      │ ODBC (IBM DB2 CLI Driver)
+┌─────────────────────▼───────────────────────────────┐
+│               IBM DB2 (Docker)                       │
+│         Tabela: DB2INST1.CLIENTES_COOPALF            │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -63,55 +69,65 @@ A comunicação entre .NET e COBOL é feita via **processo separado com troca de
 
 ### 3.1 Núcleo COBOL — CLICORE.cbl
 
-Responsável por toda a lógica de negócio e persistência dos dados cadastrais. Compilado como executável pelo GnuCOBOL 3.2 64 bits.
+Responsável pela lógica de negócio e por orquestrar o acesso ao DB2 através das chamadas ao wrapper C.
 
-**Responsabilidades:**
-- Ler a requisição do arquivo `REQUEST.DAT`
-- Processar no arquivo indexado `CLIENTES.DAT`
-- Gravar a resposta em `RESPONSE.DAT`
+**Operações:**
 
-**Layout do REQUEST.DAT:**
+| Código | Operação | Função C chamada |
+|--------|----------|------------------|
+| `C` | Consultar cliente | `DBSELECT` |
+| `N` | Cadastrar novo cliente | `DBINSERT` |
+| `A` | Atualizar telefone e e-mail | `DBUPDATE` |
 
-| Campo | Posição | Tamanho | Descrição |
-|-------|---------|---------|-----------|
-| Operação | 1 | 1 | C=Consultar, A=Atualizar |
-| Código | 2-5 | 4 | Código do cliente (numérico) |
-| Telefone | 6-20 | 15 | Telefone para atualização |
-| E-mail | 21-70 | 50 | E-mail para atualização |
+**Return codes:**
 
-**Layout do RESPONSE.DAT:**
+| Código | Significado |
+|--------|-------------|
+| `00` | Sucesso |
+| `01` | Não encontrado / Código já existe |
+| `02` | Erro interno |
 
-| Campo | Posição | Tamanho | Descrição |
-|-------|---------|---------|-----------|
-| Return Code | 1-2 | 2 | 00=Sucesso, 01=Não encontrado, 02=Erro |
-| Nome | 3-42 | 40 | Nome do cliente |
-| Telefone | 43-57 | 15 | Telefone do cliente |
-| E-mail | 58-107 | 50 | E-mail do cliente |
-| Mensagem | 108-187 | 80 | Mensagem de retorno |
+### 3.2 Wrapper C — DB2HELPER.c
 
-### 3.2 Copybook — CLIENTE.cpy
+Camada intermediária escrita em C que traduz as chamadas COBOL (`CALL "DBSELECT"`) em chamadas ODBC.
 
-Define a estrutura de dados compartilhada internamente pelo COBOL. É o **contrato de dados** que documenta o layout dos campos.
+**Por que um wrapper?**
+O GnuCOBOL não consegue chamar funções ODBC diretamente via `CALL`, pois procura módulos COBOL, não símbolos C. O wrapper é compilado como objeto (`.o`) e linkado estaticamente ao executável COBOL.
 
-### 3.3 Web API REST — CoopAlfa.Api
+**Funções expostas:**
 
-Camada moderna em ASP.NET Core (.NET 10) que expõe o núcleo COBOL como serviço REST. Também serve a interface HTML do atendente como arquivo estático.
+| Função | Descrição |
+|--------|-----------|
+| `DBCONECT` | Conecta no DB2 via `SQLDriverConnect` |
+| `DBSELECT` | Consulta cliente pelo código |
+| `DBINSERT` | Insere novo cliente + `SQLEndTran` (commit) |
+| `DBUPDATE` | Atualiza contato + `SQLEndTran` (commit) |
+| `DBDISCON` | Desconecta e libera handles |
 
-**Endpoints:**
+### 3.3 Banco de Dados — IBM DB2
 
-| Método | Rota | Descrição |
+Tabela `DB2INST1.CLIENTES_COOPALF`:
+
+| Coluna | Tipo | Descrição |
 |--------|------|-----------|
-| `GET` | `/api/clientes/{codigo}` | Consulta cliente pelo código |
-| `PUT` | `/api/clientes/{codigo}/contato` | Atualiza telefone e e-mail |
+| `CLI_CODIGO` | `INTEGER NOT NULL` | Chave primária |
+| `CLI_NOME` | `VARCHAR(40) NOT NULL` | Nome do cliente |
+| `CLI_TELEFONE` | `VARCHAR(15)` | Telefone |
+| `CLI_EMAIL` | `VARCHAR(50)` | E-mail |
+
+### 3.4 Web API REST — CoopAlfa.Api
+
+Camada moderna em ASP.NET Core (.NET 10) que expõe o núcleo COBOL como serviço REST.
 
 **Validações implementadas:**
 - Código entre 1 e 9999
-- Telefone no formato `(XX) XXXXX-XXXX` ou `(XX) XXXX-XXXX`
+- Nome obrigatório (máx 40 caracteres)
+- Telefone no formato `(XX) XXXXX-XXXX`
 - E-mail com formato válido (Regex com timeout — S6444)
 
-### 3.4 Interface do Atendente — index.html
+### 3.5 Interface do Atendente — index.html
 
-Página HTML/JS servida pela própria API como arquivo estático (`wwwroot`). Consome os endpoints REST da mesma origem.
+Página HTML/JS servida pela própria API. Duas abas: **Consultar Cliente** e **Criar Cliente**.
 
 ---
 
@@ -119,35 +135,41 @@ Página HTML/JS servida pela própria API como arquivo estático (`wwwroot`). Co
 
 ### 4.1 Por que processo separado em vez de P/Invoke?
 
-A abordagem inicial prevista era P/Invoke (chamada direta à DLL do COBOL). Durante a implementação, foram identificados problemas de incompatibilidade entre o runtime do GnuCOBOL 32 bits (disponível no OpenCobolIDE) e o .NET 10 64 bits, além de problemas de marshalling de memória entre os dois runtimes.
+A abordagem inicial prevista era P/Invoke (chamada direta à DLL do COBOL). Durante a implementação foram identificados problemas de incompatibilidade entre o runtime do GnuCOBOL e o .NET 10 (BadImageFormatException 32/64 bits, Access Violation 0xC0000005 no marshalling de structs).
 
-A decisão de usar processo separado com troca de dados por arquivo foi tomada pelos seguintes motivos:
+A decisão de usar processo separado com troca de dados por arquivo foi tomada porque:
 
-**Fidelidade ao cenário legado:** a Aline (cliente) descreveu o sistema atual como "dados em arquivos de difícil acesso". No mainframe real, a integração com sistemas legados COBOL é feita exatamente assim — submetendo jobs batch que leem e gravam datasets. O processo separado reproduz esse padrão fielmente.
+**Fidelidade ao cenário legado:** no mainframe real, a integração com sistemas legados COBOL é feita submetendo jobs batch que leem e gravam datasets. O processo separado reproduz esse padrão.
 
-**Isolamento de runtimes:** cada processo tem seu próprio espaço de memória, eliminando os problemas de marshalling entre .NET e COBOL. Isso é mais robusto e previsível.
+**Isolamento de runtimes:** cada processo tem seu próprio espaço de memória, eliminando problemas de marshalling entre .NET e COBOL.
 
-**Portabilidade:** o COBOL pode ser substituído por qualquer implementação que leia `REQUEST.DAT` e escreva `RESPONSE.DAT`, sem alterar a API.
+### 4.2 Por que o COBOL acessa o DB2 e não o .NET?
 
-**Alternativa considerada e descartada:** P/Invoke direto com CLICORE.dll. Descartado pelos problemas de compatibilidade 32/64 bits e Access Violation (0xC0000005) ao passar structs entre os runtimes.
+Esta foi uma decisão explícita da cliente (Aline): *"O Cobol atualiza o arquivo ou banco de dados"*. No mainframe real, o COBOL é quem executa `EXEC SQL` contra o DB2 — não uma camada intermediária.
 
-### 4.2 Por que arquivo indexado em vez de DB2?
+Manter o COBOL como responsável pela persistência preserva o papel do legado e demonstra fielmente o fluxo `.NET → COBOL → DB2`.
 
-O arquivo indexado (`ORGANIZATION IS INDEXED`) representa fielmente o ambiente legado descrito no cenário. É o padrão VSAM do mainframe, simulado pelo GnuCOBOL.
+### 4.3 Por que um wrapper C em vez de EXEC SQL?
 
-**DB2 foi considerado** e está disponível via Docker. A arquitetura foi desenhada para que o módulo de persistência seja substituível por `EXEC SQL` com DB2 sem alterar a API. Documentado como melhoria futura.
+O `EXEC SQL` do DB2 exige o preprocessador `db2 prep`, que transforma o COBOL em C antes de compilar. O setup desse preprocessador com GnuCOBOL no Windows é complexo e frágil.
 
-### 4.3 Por que a interface é servida pela própria API?
+O wrapper C oferece o mesmo resultado — o COBOL comanda o acesso ao banco — usando a API ODBC padrão. É uma solução equivalente e mais portável.
 
-Serve dois propósitos: simplifica o deploy (um único processo) e **demonstra na prática** que a API é reutilizável — o atendente é apenas mais um cliente consumindo os endpoints REST.
+**Compilação:** o wrapper é compilado como objeto (`gcc -c`) e linkado ao COBOL (`cobc -x CLICORE.cbl DB2HELPER.o -lodbc32`), gerando um único executável.
 
-### 4.4 Por que IClienteService (interface)?
+### 4.4 Por que SQLDriverConnect em vez de SQLConnect?
 
-Permite injeção de dependência e mock nos testes xUnit sem depender do COBOL. Segue o princípio de inversão de dependência (SOLID).
+O `SQLDriverConnect` aceita uma connection string completa (`DSN=BANCODSN;UID=...;PWD=...`), enquanto o `SQLConnect` passa os parâmetros separadamente. O primeiro se mostrou mais confiável com o driver IBM DB2 CLI.
 
-### 4.5 CORS permissivo no ambiente de desenvolvimento
+Também foi configurado `SQL_ATTR_LOGIN_TIMEOUT` de 10 segundos para evitar travamentos indefinidos quando o DB2 não responde.
 
-O `AllowAnyOrigin()` foi mantido para facilitar o desenvolvimento. Em produção, seria substituído por política restrita. Identificado pelo SonarQube (S5122) e documentado como decisão consciente.
+### 4.5 Por que commit explícito com SQLEndTran?
+
+O ODBC opera em modo *autocommit* por padrão, mas o driver DB2 CLI pode não persistir imediatamente. O `SQLEndTran(SQL_HANDLE_DBC, hDbc, SQL_COMMIT)` após INSERT e UPDATE garante que os dados sejam gravados.
+
+### 4.6 Por que IClienteService (interface)?
+
+Permite injeção de dependência e mock nos testes xUnit sem depender do COBOL ou do DB2. Segue o princípio de inversão de dependência (SOLID).
 
 ---
 
@@ -160,76 +182,69 @@ O `AllowAnyOrigin()` foi mantido para facilitar o desenvolvimento. Em produção
 3. ClientesController valida o código (1-9999)
 4. ClienteService grava REQUEST.DAT: "C1001..."
 5. ClienteService executa CLICORE.exe
-6. CLICORE lê REQUEST.DAT, busca no CLIENTES.DAT
-7. CLICORE grava RESPONSE.DAT: "00Maria Silva..."
-8. ClienteService lê RESPONSE.DAT e monta ClienteModel
-9. Controller retorna 200 OK ou 404 Not Found
-10. Interface exibe os dados do cliente
+6. CLICORE lê REQUEST.DAT
+7. CLICORE chama DBCONECT (conecta no DB2)
+8. CLICORE chama DBSELECT (SELECT no DB2)
+9. CLICORE chama DBDISCON (desconecta)
+10. CLICORE grava RESPONSE.DAT: "00Maria Silva..."
+11. ClienteService lê RESPONSE.DAT
+12. Controller retorna 200 OK ou 404 Not Found
+```
+
+### Cadastro de cliente
+```
+1. Atendente preenche o formulário e clica "Cadastrar"
+2. HTML/JS envia POST /api/clientes
+3. Controller valida código, nome, telefone e e-mail
+4. ClienteService grava REQUEST.DAT: "N2001Carlos..."
+5. CLICORE chama DBINSERT (INSERT + COMMIT no DB2)
+6. Controller retorna 201 Created ou 409 Conflict
 ```
 
 ### Atualização de contato
 ```
 1. Atendente edita telefone/e-mail e clica "Salvar"
-2. HTML/JS valida formato localmente
-3. HTML/JS envia PUT /api/clientes/{codigo}/contato
-4. Controller valida telefone e e-mail (Regex com timeout)
-5. ClienteService grava REQUEST.DAT: "A1001(11)98888..."
-6. ClienteService executa CLICORE.exe
-7. CLICORE lê REQUEST.DAT, atualiza CLIENTES.DAT (REWRITE)
-8. CLICORE grava RESPONSE.DAT: "00Maria Silva..."
-9. Controller retorna 200 OK com dados atualizados
-10. Interface exibe confirmação de sucesso
+2. HTML/JS envia PUT /api/clientes/{codigo}/contato
+3. ClienteService grava REQUEST.DAT: "A1001(11)98888..."
+4. CLICORE chama DBUPDATE (UPDATE + COMMIT no DB2)
+5. Controller retorna 200 OK com dados atualizados
 ```
 
 ---
 
-## 6. Qualidade e DevOps
+## 6. Desafios Encontrados
+
+### 6.1 GnuCOBOL 32 bits vs .NET 64 bits
+O GnuCOBOL do OpenCobolIDE é 32 bits. Foi necessário instalar o GnuCOBOL 3.2 64 bits (SuperBOL All-in-One) para compatibilidade.
+
+### 6.2 CALL para funções ODBC não funciona no COBOL
+O `CALL "SQLAllocHandle"` falha porque o GnuCOBOL procura módulos COBOL, não símbolos C. Solução: wrapper C linkado estaticamente.
+
+### 6.3 DB2 Community no Docker e TCP
+O `db2start` frequentemente retorna `SQL5043N` (falha ao iniciar protocolos de comunicação), impedindo conexões ODBC externas. Solução: executar `ipclean -a` antes do `db2start`.
+
+```cmd
+docker exec -it db2 bash -c "su - db2inst1 -c 'db2stop force; ipclean -a; db2start'"
+```
+
+---
+
+## 7. Qualidade e DevOps
 
 ### SonarQube
-Análise estática do código C# via SonarQube Community 9.9.8 (Docker local).
+Análise estática do código C# via SonarQube Community (Docker local).
 
-**Resultado final:**
-- Bugs: 0 (Rating A)
-- Vulnerabilities: 0 (Rating A)
-- Code Smells: 0 (Rating A)
-- Quality Gate: **Passed**
+**Resultado:** Bugs 0 (A) | Vulnerabilities 0 (A) | Code Smells 0 (A) | Quality Gate **Passed**
 
 ### GitHub Actions (CI/CD)
-Pipeline configurado em `.github/workflows/build.yml`. Executa automaticamente a cada push nas branches `main` e `dev`:
-1. Setup .NET 10
-2. Build da solution
-3. Execução dos 18 testes xUnit
-
----
-
-## 7. Estrutura do Projeto
-
-```
-coopAlfa-modernizacao/
-├── src/cobol/
-│   ├── copybook/CLIENTE.cpy       ← Contrato de dados
-│   ├── build/CLICORE.exe          ← Núcleo COBOL compilado
-│   ├── build/CLIENTES.DAT         ← Arquivo indexado legado
-│   ├── CLICORE.cbl                ← Código-fonte COBOL
-│   └── CLISEED.cbl                ← Populador de dados
-├── src/dotnet/
-│   ├── CoopAlfa.Api/
-│   │   ├── Controllers/           ← Endpoints REST
-│   │   ├── Models/                ← DTOs
-│   │   ├── Services/              ← Integração COBOL
-│   │   ├── cobol/                 ← Runtime COBOL
-│   │   └── wwwroot/index.html     ← Interface do atendente
-│   └── CoopAlfa.Tests/            ← 18 testes xUnit
-├── docs/                          ← Documentação
-└── .github/workflows/build.yml    ← CI/CD
-```
+Pipeline em `.github/workflows/build.yml`. Executa build e testes xUnit a cada push nas branches `main` e `dev`.
 
 ---
 
 ## 8. Melhorias Futuras
 
-- **DB2 como persistência:** substituir o arquivo indexado por EXEC SQL com DB2
-- **Cadastro e exclusão:** operações adicionais já previstas na arquitetura do CLICORE
-- **SonarCloud:** migrar análise para SonarCloud para integração nativa com GitHub Actions
-- **Autenticação:** adicionar JWT na API para controle de acesso
-- **z/OS Connect:** em ambiente mainframe real, o papel do ClienteService seria assumido pelo z/OS Connect
+- **EXEC SQL nativo:** substituir o wrapper C por `EXEC SQL` com o preprocessador `db2 prep`, mais próximo do Enterprise COBOL do mainframe.
+- **Exclusão de clientes:** operação `DBDELETE` já prevista na arquitetura.
+- **Connection pooling:** manter a conexão DB2 aberta entre chamadas para reduzir latência.
+- **Autenticação:** adicionar JWT na API para controle de acesso.
+- **z/OS Connect:** em ambiente mainframe real, o papel do ClienteService seria assumido pelo z/OS Connect.

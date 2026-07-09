@@ -2,18 +2,13 @@
       * CLICORE.CBL - Nucleo legado de cadastro de clientes            *
       * Cooperativa Financeira Alfa - Projeto de Modernizacao          *
       *                                                                *
-      * Arquitetura: processo separado                                 *
-      * Le a requisicao de REQUEST.DAT, processa, grava RESPONSE.DAT   *
+      * Arquitetura: processo separado + DB2 via wrapper C (ODBC)      *
+      * Le REQUEST.DAT, chama DB2HELPER.dll, grava RESPONSE.DAT        *
       *                                                                *
       * Operacoes:                                                     *
       *   C = Consultar cliente pelo codigo                            *
       *   N = Cadastrar novo cliente                                   *
       *   A = Atualizar telefone e e-mail                              *
-      *                                                                *
-      * Return codes:                                                  *
-      *   00 = Sucesso                                                 *
-      *   01 = Nao encontrado / Codigo ja existe                       *
-      *   02 = Erro interno                                            *
       *================================================================*
        IDENTIFICATION DIVISION.
        PROGRAM-ID. CLICORE.
@@ -22,13 +17,6 @@
        CONFIGURATION SECTION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
-           SELECT ARQUIVO-CLIENTES
-               ASSIGN TO "CLIENTES.DAT"
-               ORGANIZATION IS INDEXED
-               ACCESS MODE IS RANDOM
-               RECORD KEY IS ARQ-CODIGO
-               FILE STATUS IS WS-FILE-STATUS.
-
            SELECT ARQUIVO-REQUEST
                ASSIGN TO "REQUEST.DAT"
                ORGANIZATION IS LINE SEQUENTIAL
@@ -41,13 +29,6 @@
 
        DATA DIVISION.
        FILE SECTION.
-       FD ARQUIVO-CLIENTES.
-       01 REGISTRO-CLIENTE.
-           05 ARQ-CODIGO           PIC 9(04).
-           05 ARQ-NOME             PIC X(40).
-           05 ARQ-TELEFONE         PIC X(15).
-           05 ARQ-EMAIL            PIC X(50).
-
        FD ARQUIVO-REQUEST.
        01 REGISTRO-REQUEST         PIC X(200).
 
@@ -55,7 +36,6 @@
        01 REGISTRO-RESPONSE        PIC X(200).
 
        WORKING-STORAGE SECTION.
-       01 WS-FILE-STATUS           PIC X(02).
        01 WS-REQ-STATUS            PIC X(02).
        01 WS-RESP-STATUS           PIC X(02).
 
@@ -65,7 +45,7 @@
               88 OP-CONSULTAR      VALUE 'C'.
               88 OP-NOVO           VALUE 'N'.
               88 OP-ATUALIZAR      VALUE 'A'.
-           05 WS-CODIGO            PIC 9(04).
+           05 WS-CODIGO            PIC X(04).
            05 WS-NOME-REQ          PIC X(40).
            05 WS-TELEFONE-REQ      PIC X(15).
            05 WS-EMAIL-REQ         PIC X(50).
@@ -78,21 +58,32 @@
            05 WS-EMAIL-OUT         PIC X(50).
            05 WS-MENSAGEM          PIC X(80).
 
+      * Return code do helper
+       01 WS-DB-RC                 PIC X(02).
+
        PROCEDURE DIVISION.
        INICIO.
            PERFORM LER-REQUEST
-           EVALUATE TRUE
-               WHEN OP-CONSULTAR
-                   PERFORM CONSULTAR-CLIENTE
-               WHEN OP-NOVO
-                   PERFORM CADASTRAR-CLIENTE
-               WHEN OP-ATUALIZAR
-                   PERFORM ATUALIZAR-CLIENTE
-               WHEN OTHER
-                   MOVE '02' TO WS-RETURN-CODE
-                   MOVE 'Operacao invalida'
-                       TO WS-MENSAGEM
-           END-EVALUATE
+           PERFORM CONECTAR-DB2
+           IF WS-DB-RC = '00'
+               EVALUATE TRUE
+                   WHEN OP-CONSULTAR
+                       PERFORM CONSULTAR-CLIENTE
+                   WHEN OP-NOVO
+                       PERFORM CADASTRAR-CLIENTE
+                   WHEN OP-ATUALIZAR
+                       PERFORM ATUALIZAR-CLIENTE
+                   WHEN OTHER
+                       MOVE '02' TO WS-RETURN-CODE
+                       MOVE 'Operacao invalida'
+                           TO WS-MENSAGEM
+               END-EVALUATE
+               PERFORM DESCONECTAR-DB2
+           ELSE
+               MOVE '02' TO WS-RETURN-CODE
+               MOVE 'Erro ao conectar no DB2'
+                   TO WS-MENSAGEM
+           END-IF
            PERFORM GRAVAR-RESPONSE
            STOP RUN.
 
@@ -106,6 +97,8 @@
            READ ARQUIVO-REQUEST
                AT END
                    MOVE '02' TO WS-RETURN-CODE
+                   MOVE 'Erro ao ler requisicao'
+                       TO WS-MENSAGEM
            END-READ
            MOVE REGISTRO-REQUEST(1:1)   TO WS-OPERACAO
            MOVE REGISTRO-REQUEST(2:4)   TO WS-CODIGO
@@ -115,79 +108,105 @@
            CLOSE ARQUIVO-REQUEST.
 
       *----------------------------------------------------------------*
+      * CONECTAR-DB2 - chama wrapper C                                 *
+      *----------------------------------------------------------------*
+       CONECTAR-DB2.
+           MOVE SPACES TO WS-DB-RC
+           CALL "DBCONECT" USING
+               WS-DB-RC
+           END-CALL.
+
+      *----------------------------------------------------------------*
+      * DESCONECTAR-DB2                                                *
+      *----------------------------------------------------------------*
+       DESCONECTAR-DB2.
+           CALL "DBDISCON" USING
+               WS-DB-RC
+           END-CALL.
+
+      *----------------------------------------------------------------*
       * CONSULTAR-CLIENTE                                              *
       *----------------------------------------------------------------*
        CONSULTAR-CLIENTE.
-           OPEN INPUT ARQUIVO-CLIENTES
-           MOVE WS-CODIGO TO ARQ-CODIGO
-           READ ARQUIVO-CLIENTES
-               INVALID KEY
-                   MOVE '01' TO WS-RETURN-CODE
-                   MOVE 'Cliente nao encontrado'
-                       TO WS-MENSAGEM
-               NOT INVALID KEY
-                   MOVE ARQ-NOME      TO WS-NOME
-                   MOVE ARQ-TELEFONE  TO WS-TEL-OUT
-                   MOVE ARQ-EMAIL     TO WS-EMAIL-OUT
-                   MOVE '00'          TO WS-RETURN-CODE
+           MOVE SPACES TO WS-NOME
+           MOVE SPACES TO WS-TEL-OUT
+           MOVE SPACES TO WS-EMAIL-OUT
+           MOVE SPACES TO WS-DB-RC
+           CALL "DBSELECT" USING
+               WS-CODIGO
+               WS-NOME
+               WS-TEL-OUT
+               WS-EMAIL-OUT
+               WS-DB-RC
+           END-CALL
+           MOVE WS-DB-RC TO WS-RETURN-CODE
+           EVALUATE WS-DB-RC
+               WHEN '00'
                    MOVE 'Consulta realizada com sucesso'
                        TO WS-MENSAGEM
-           END-READ
-           CLOSE ARQUIVO-CLIENTES.
+               WHEN '01'
+                   MOVE 'Cliente nao encontrado'
+                       TO WS-MENSAGEM
+               WHEN OTHER
+                   MOVE 'Erro ao consultar cliente'
+                       TO WS-MENSAGEM
+           END-EVALUATE.
 
       *----------------------------------------------------------------*
       * CADASTRAR-CLIENTE                                              *
       *----------------------------------------------------------------*
        CADASTRAR-CLIENTE.
-           OPEN I-O ARQUIVO-CLIENTES
-           MOVE WS-CODIGO       TO ARQ-CODIGO
-           MOVE WS-NOME-REQ     TO ARQ-NOME
-           MOVE WS-TELEFONE-REQ TO ARQ-TELEFONE
-           MOVE WS-EMAIL-REQ    TO ARQ-EMAIL
-           WRITE REGISTRO-CLIENTE
-               INVALID KEY
-                   MOVE '01' TO WS-RETURN-CODE
-                   MOVE 'Codigo ja cadastrado'
-                       TO WS-MENSAGEM
-               NOT INVALID KEY
-                   MOVE ARQ-NOME      TO WS-NOME
-                   MOVE ARQ-TELEFONE  TO WS-TEL-OUT
-                   MOVE ARQ-EMAIL     TO WS-EMAIL-OUT
-                   MOVE '00'          TO WS-RETURN-CODE
+           MOVE SPACES TO WS-DB-RC
+           CALL "DBINSERT" USING
+               WS-CODIGO
+               WS-NOME-REQ
+               WS-TELEFONE-REQ
+               WS-EMAIL-REQ
+               WS-DB-RC
+           END-CALL
+           MOVE WS-DB-RC TO WS-RETURN-CODE
+           EVALUATE WS-DB-RC
+               WHEN '00'
+                   MOVE WS-NOME-REQ     TO WS-NOME
+                   MOVE WS-TELEFONE-REQ TO WS-TEL-OUT
+                   MOVE WS-EMAIL-REQ    TO WS-EMAIL-OUT
                    MOVE 'Cliente cadastrado com sucesso'
                        TO WS-MENSAGEM
-           END-WRITE
-           CLOSE ARQUIVO-CLIENTES.
+               WHEN '01'
+                   MOVE 'Codigo ja cadastrado'
+                       TO WS-MENSAGEM
+               WHEN OTHER
+                   MOVE 'Erro ao cadastrar cliente'
+                       TO WS-MENSAGEM
+           END-EVALUATE.
 
       *----------------------------------------------------------------*
       * ATUALIZAR-CLIENTE                                              *
       *----------------------------------------------------------------*
        ATUALIZAR-CLIENTE.
-           OPEN I-O ARQUIVO-CLIENTES
-           MOVE WS-CODIGO TO ARQ-CODIGO
-           READ ARQUIVO-CLIENTES
-               INVALID KEY
-                   MOVE '01' TO WS-RETURN-CODE
+           MOVE SPACES TO WS-NOME
+           MOVE SPACES TO WS-DB-RC
+           CALL "DBUPDATE" USING
+               WS-CODIGO
+               WS-TELEFONE-REQ
+               WS-EMAIL-REQ
+               WS-NOME
+               WS-DB-RC
+           END-CALL
+           MOVE WS-DB-RC TO WS-RETURN-CODE
+           EVALUATE WS-DB-RC
+               WHEN '00'
+                   MOVE WS-TELEFONE-REQ TO WS-TEL-OUT
+                   MOVE WS-EMAIL-REQ    TO WS-EMAIL-OUT
+                   MOVE 'Atualizacao realizada com sucesso'
+                       TO WS-MENSAGEM
+               WHEN '01'
                    MOVE 'Cliente nao encontrado'
                        TO WS-MENSAGEM
-               NOT INVALID KEY
-                   MOVE WS-TELEFONE-REQ TO ARQ-TELEFONE
-                   MOVE WS-EMAIL-REQ    TO ARQ-EMAIL
-                   REWRITE REGISTRO-CLIENTE
-                       INVALID KEY
-                           MOVE '02' TO WS-RETURN-CODE
-                           MOVE 'Erro ao atualizar'
-                               TO WS-MENSAGEM
-                       NOT INVALID KEY
-                           MOVE ARQ-NOME     TO WS-NOME
-                           MOVE ARQ-TELEFONE TO WS-TEL-OUT
-                           MOVE ARQ-EMAIL    TO WS-EMAIL-OUT
-                           MOVE '00' TO WS-RETURN-CODE
-                           MOVE 'Atualizacao realizada'
-                               TO WS-MENSAGEM
-                   END-REWRITE
-           END-READ
-           CLOSE ARQUIVO-CLIENTES.
+               WHEN OTHER
+                   MOVE 'Erro ao atualizar cliente'
+                       TO WS-MENSAGEM
+           END-EVALUATE.
 
       *----------------------------------------------------------------*
       * GRAVAR-RESPONSE                                                *

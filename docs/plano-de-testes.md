@@ -12,17 +12,35 @@ Validar as funcionalidades da solução e garantir que futuras alterações não
 
 ## 2. Estratégia de Testes
 
-**Testes automatizados (xUnit + Moq):** validam a camada Controller e as regras de negócio de forma isolada, usando mock do `IClienteService`. Não dependem do COBOL para executar.
+**Testes automatizados (xUnit + Moq):** validam a camada Controller e as regras de negócio de forma isolada, usando mock do `IClienteService`. Não dependem do COBOL nem do DB2 para executar.
 
-**Testes manuais:** validam o fluxo completo end-to-end, desde a interface HTML até o arquivo indexado COBOL.
+**Testes de integração manuais:** validam o fluxo completo end-to-end, desde a interface HTML até a tabela no DB2.
 
 Em ambiente mainframe real, o **ECCOX APT** seria utilizado para testes isolados do núcleo COBOL, criando ambientes paralelos com dados de teste independentes.
 
 ---
 
-## 3. Casos de Teste Automatizados
+## 3. Pré-condições
 
-### 3.1 Consulta de Cliente
+O DB2 deve estar iniciado corretamente:
+
+```cmd
+docker exec -it db2 bash -c "su - db2inst1 -c 'db2stop force; ipclean -a; db2start'"
+```
+
+Dados iniciais na tabela `DB2INST1.CLIENTES_COOPALF`:
+
+| CLI_CODIGO | CLI_NOME | CLI_TELEFONE | CLI_EMAIL |
+|---|---|---|---|
+| 1001 | Maria Silva | (11) 99999-1234 | maria@email.com |
+| 1002 | Joao Santos | (21) 98888-5678 | joao@email.com |
+| 1003 | Ana Oliveira | (31) 97777-9012 | ana@email.com |
+
+---
+
+## 4. Casos de Teste Automatizados
+
+### 4.1 Consulta de Cliente
 
 **CT-001 — Consulta com código válido e cliente existente**
 
@@ -40,43 +58,55 @@ Em ambiente mainframe real, o **ECCOX APT** seria utilizado para testes isolados
 | **Resultado esperado** | HTTP 404 Not Found |
 | **Status** | ✅ Passou |
 
-**CT-003 — Código zero**
+**CT-003 a CT-005 — Código inválido**
+
+| Código testado | Resultado esperado | Status |
+|---------------|-------------------|--------|
+| 0 | HTTP 400 Bad Request | ✅ Passou |
+| -1 | HTTP 400 Bad Request | ✅ Passou |
+| 10000 | HTTP 400 Bad Request | ✅ Passou |
+
+---
+
+### 4.2 Cadastro de Cliente
+
+**CT-006 — Cadastro com dados válidos**
 
 | Campo | Valor |
 |-------|-------|
-| **Entrada** | `GET /api/clientes/0` |
-| **Resultado esperado** | HTTP 400 Bad Request |
+| **Entrada** | `POST /api/clientes` com código 2001, nome, telefone e e-mail válidos |
+| **Resultado esperado** | HTTP 201 Created + registro persistido no DB2 |
 | **Status** | ✅ Passou |
 
-**CT-004 — Código negativo**
+**CT-007 — Cadastro com código já existente**
 
 | Campo | Valor |
 |-------|-------|
-| **Entrada** | `GET /api/clientes/-1` |
-| **Resultado esperado** | HTTP 400 Bad Request |
+| **Entrada** | `POST /api/clientes` com código 1001 (já existe) |
+| **Resultado esperado** | HTTP 409 Conflict |
 | **Status** | ✅ Passou |
 
-**CT-005 — Código acima do limite**
+**CT-008 — Cadastro sem nome**
 
 | Campo | Valor |
 |-------|-------|
-| **Entrada** | `GET /api/clientes/10000` |
+| **Entrada** | `POST /api/clientes` com nome vazio |
 | **Resultado esperado** | HTTP 400 Bad Request |
 | **Status** | ✅ Passou |
 
 ---
 
-### 3.2 Atualização de Contato
+### 4.3 Atualização de Contato
 
-**CT-006 — Atualização com dados válidos**
+**CT-009 — Atualização com dados válidos**
 
 | Campo | Valor |
 |-------|-------|
 | **Entrada** | `PUT /api/clientes/1001/contato` com telefone e e-mail válidos |
-| **Resultado esperado** | HTTP 200 OK com dados atualizados |
+| **Resultado esperado** | HTTP 200 OK + dados atualizados no DB2 |
 | **Status** | ✅ Passou |
 
-**CT-007 — Cliente não existente**
+**CT-010 — Cliente não existente**
 
 | Campo | Valor |
 |-------|-------|
@@ -84,7 +114,7 @@ Em ambiente mainframe real, o **ECCOX APT** seria utilizado para testes isolados
 | **Resultado esperado** | HTTP 404 Not Found |
 | **Status** | ✅ Passou |
 
-**CT-008 a CT-011 — Telefone inválido (4 formatos)**
+**CT-011 a CT-014 — Telefone inválido**
 
 | Formato testado | Status |
 |----------------|--------|
@@ -93,7 +123,7 @@ Em ambiente mainframe real, o **ECCOX APT** seria utilizado para testes isolados
 | `99999-1234` (sem DDD) | ✅ Passou |
 | `(1) 99999-1234` (DDD incompleto) | ✅ Passou |
 
-**CT-012 a CT-014 — E-mail inválido (3 formatos)**
+**CT-015 a CT-017 — E-mail inválido**
 
 | Formato testado | Status |
 |----------------|--------|
@@ -101,59 +131,87 @@ Em ambiente mainframe real, o **ECCOX APT** seria utilizado para testes isolados
 | `@semdominio` | ✅ Passou |
 | `sem@ponto` | ✅ Passou |
 
-**CT-015 a CT-017 — Código inválido na atualização**
+---
 
-| Código testado | Status |
-|---------------|--------|
-| 0 | ✅ Passou |
-| -5 | ✅ Passou |
-| 10000 | ✅ Passou |
+## 5. Testes de Integração (Manuais)
+
+### CT-018 — Fluxo completo de consulta
+
+**Passos:**
+1. Iniciar o DB2 com `ipclean + db2start`
+2. Rodar a API (`dotnet run`)
+3. Acessar `http://localhost:5125/index.html`
+4. Digitar código `1001` e clicar "Buscar"
+
+**Resultado esperado:** dados de Maria Silva exibidos na tela
+
+**Evidência:** ✅ Sistema exibiu nome, telefone e e-mail corretamente
 
 ---
 
-### 3.3 Testes Manuais (Interface)
+### CT-019 — Fluxo completo de cadastro (persistência no DB2)
 
-**CT-018 — Busca pelo código via interface**
+**Passos:**
+1. Acessar a aba "Criar Cliente"
+2. Preencher: código `5008`, nome `TESTE`, telefone `(11) 11111-1111`, e-mail `DB2@GMAIL.COM`
+3. Clicar "Cadastrar cliente"
+4. Verificar no DB2:
 
-| Campo | Valor |
-|-------|-------|
-| **Passos** | 1. Acessar `http://localhost:5125/index.html` 2. Digitar código 3. Clicar "Buscar" |
-| **Resultado esperado** | Dados do cliente exibidos |
-| **Evidência** | Sistema exibiu Maria Silva (código 1001) com telefone e e-mail ✅ |
+```cmd
+docker exec -it db2 bash -c "su - db2inst1 -c 'db2 connect to BANCO && db2 \"SELECT * FROM DB2INST1.CLIENTES_COOPALF\"'"
+```
 
-**CT-019 — Edição de contato via interface**
+**Resultado esperado:** registro 5008 presente na tabela do DB2
 
-| Campo | Valor |
-|-------|-------|
-| **Passos** | 1. Clicar "Editar contato" 2. Alterar dados 3. Clicar "Salvar" |
-| **Resultado esperado** | Mensagem de sucesso e dados atualizados |
-
-**CT-020 — Máscara automática de telefone**
-
-| Campo | Valor |
-|-------|-------|
-| **Passos** | Digitar números no campo telefone |
-| **Resultado esperado** | Formatação `(XX) XXXXX-XXXX` automática |
+**Evidência:** ✅ Confirmado — registro persistido:
+```
+CLI_CODIGO  CLI_NOME   CLI_TELEFONE     CLI_EMAIL
+5008        TESTE      (11) 11111-1111  DB2@GMAIL.COM
+```
 
 ---
 
-## 4. Resumo
+### CT-020 — Fluxo completo de atualização
+
+**Passos:**
+1. Consultar cliente `1001`
+2. Clicar "Editar contato"
+3. Alterar telefone e e-mail
+4. Clicar "Salvar alterações"
+5. Verificar no DB2
+
+**Resultado esperado:** dados atualizados na tabela do DB2
+
+---
+
+### CT-021 — Teste direto do COBOL (sem API)
+
+**Passos:**
+1. Criar `REQUEST.DAT` com `C1001` + espaços
+2. Executar `CLICORE.exe`
+3. Verificar `RESPONSE.DAT`
+
+**Resultado esperado:**
+```
+00Maria Silva ... (11) 99999-1234 ... maria@email.com ... Consulta realizada com sucesso
+```
+
+**Evidência:** ✅ Confirmado — COBOL acessou o DB2 diretamente via wrapper C
+
+---
+
+## 6. Resumo
 
 | Categoria | Total | Passou |
 |-----------|-------|--------|
-| Automatizados (xUnit) | 18 | 18 ✅ |
-| Manuais | 3 | — |
+| Automatizados (xUnit) | 17 | 17 ✅ |
+| Integração manual | 4 | 4 ✅ |
 
 ---
 
-## 5. Como Executar
+## 7. Como Executar os Testes Automatizados
 
 ```bash
 cd src/dotnet
 dotnet test CoopAlfa.slnx
-```
-
-**Resultado:**
-```
-Resumo do teste: total: 18; falhou: 0; bem-sucedido: 18; ignorado: 0
 ```
