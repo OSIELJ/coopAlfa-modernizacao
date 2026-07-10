@@ -184,6 +184,14 @@ CLI_CODIGO  CLI_NOME   CLI_TELEFONE     CLI_EMAIL
 
 ---
 
+### 4.4 Testes do Contrato de Dados (Serialização)
+
+Além dos casos funcionais acima, `ClienteContratoTests.cs` valida isoladamente o layout posicional definido em `CLIENTE.cpy` — offsets, tamanhos, preenchimento com espaços/zeros à esquerda, truncamento de campos maiores que o declarado, e desserialização de respostas do COBOL (incluindo casos com quebra de linha ou conteúdo mais curto que o esperado).
+
+Essa camada de testes garante que uma alteração acidental em `CLIENTE.cpy` ou em `ClienteContrato.cs` quebre o build em vez de gravar dados corrompidos silenciosamente no DB2. São 16 testes adicionais aos 17 casos funcionais da Controller.
+
+---
+
 ### CT-021 — Teste direto do COBOL (sem API)
 
 **Passos:**
@@ -204,7 +212,9 @@ CLI_CODIGO  CLI_NOME   CLI_TELEFONE     CLI_EMAIL
 
 | Categoria | Total | Passou |
 |-----------|-------|--------|
-| Automatizados (xUnit) | 17 | 17 ✅ |
+| Automatizados (xUnit) — casos funcionais (Controller) | 17 | 17 ✅ |
+| Automatizados (xUnit) — contrato de dados (Serialização) | 16 | 16 ✅ |
+| **Automatizados (xUnit) — total** | **33** | **33 ✅** |
 | Integração manual | 4 | 4 ✅ |
 
 ---
