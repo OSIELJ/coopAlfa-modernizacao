@@ -2,8 +2,12 @@
       * CLICORE.CBL - Nucleo legado de cadastro de clientes            *
       * Cooperativa Financeira Alfa - Projeto de Modernizacao          *
       *                                                                *
-      * Arquitetura: processo separado                                 *
-      * Le a requisicao de REQUEST.DAT, processa, grava RESPONSE.DAT   *
+      * Arquitetura: processo separado + DB2 via wrapper C (ODBC)      *
+      * Le a requisicao de REQUEST.DAT, acessa o DB2 atraves das       *
+      * funcoes do DB2HELPER, e grava a resposta em RESPONSE.DAT.      *
+      *                                                                *
+      * O layout dos dois arquivos e definido em CLIENTE.cpy, que e a  *
+      * definicao unica do contrato compartilhado com a camada .NET.   *
       *                                                                *
       * Operacoes:                                                     *
       *   C = Consultar cliente pelo codigo                            *
@@ -22,13 +26,6 @@
        CONFIGURATION SECTION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
-           SELECT ARQUIVO-CLIENTES
-               ASSIGN TO "CLIENTES.DAT"
-               ORGANIZATION IS INDEXED
-               ACCESS MODE IS RANDOM
-               RECORD KEY IS ARQ-CODIGO
-               FILE STATUS IS WS-FILE-STATUS.
-
            SELECT ARQUIVO-REQUEST
                ASSIGN TO "REQUEST.DAT"
                ORGANIZATION IS LINE SEQUENTIAL
@@ -41,13 +38,6 @@
 
        DATA DIVISION.
        FILE SECTION.
-       FD ARQUIVO-CLIENTES.
-       01 REGISTRO-CLIENTE.
-           05 ARQ-CODIGO           PIC 9(04).
-           05 ARQ-NOME             PIC X(40).
-           05 ARQ-TELEFONE         PIC X(15).
-           05 ARQ-EMAIL            PIC X(50).
-
        FD ARQUIVO-REQUEST.
        01 REGISTRO-REQUEST         PIC X(200).
 
@@ -55,49 +45,49 @@
        01 REGISTRO-RESPONSE        PIC X(200).
 
        WORKING-STORAGE SECTION.
-       01 WS-FILE-STATUS           PIC X(02).
+
+      *----------------------------------------------------------------*
+      * Contrato de dados compartilhado com a camada .NET              *
+      * Define WS-REQUEST (110 bytes) e WS-RESPONSE (187 bytes)        *
+      *----------------------------------------------------------------*
+       COPY "CLIENTE.cpy".
+
+      *----------------------------------------------------------------*
+      * Variaveis internas (nao fazem parte do contrato)               *
+      *----------------------------------------------------------------*
        01 WS-REQ-STATUS            PIC X(02).
        01 WS-RESP-STATUS           PIC X(02).
-
-      * Estrutura da requisicao (entrada)
-       01 WS-REQUEST.
-           05 WS-OPERACAO          PIC X(01).
-              88 OP-CONSULTAR      VALUE 'C'.
-              88 OP-NOVO           VALUE 'N'.
-              88 OP-ATUALIZAR      VALUE 'A'.
-           05 WS-CODIGO            PIC 9(04).
-           05 WS-NOME-REQ          PIC X(40).
-           05 WS-TELEFONE-REQ      PIC X(15).
-           05 WS-EMAIL-REQ         PIC X(50).
-
-      * Estrutura da resposta (saida)
-       01 WS-RESPONSE.
-           05 WS-RETURN-CODE       PIC X(02).
-           05 WS-NOME              PIC X(40).
-           05 WS-TEL-OUT           PIC X(15).
-           05 WS-EMAIL-OUT         PIC X(50).
-           05 WS-MENSAGEM          PIC X(80).
+       01 WS-DB-RC                 PIC X(02).
 
        PROCEDURE DIVISION.
        INICIO.
            PERFORM LER-REQUEST
-           EVALUATE TRUE
-               WHEN OP-CONSULTAR
-                   PERFORM CONSULTAR-CLIENTE
-               WHEN OP-NOVO
-                   PERFORM CADASTRAR-CLIENTE
-               WHEN OP-ATUALIZAR
-                   PERFORM ATUALIZAR-CLIENTE
-               WHEN OTHER
-                   MOVE '02' TO WS-RETURN-CODE
-                   MOVE 'Operacao invalida'
-                       TO WS-MENSAGEM
-           END-EVALUATE
+           PERFORM CONECTAR-DB2
+           IF WS-DB-RC = '00'
+               EVALUATE TRUE
+                   WHEN OP-CONSULTAR
+                       PERFORM CONSULTAR-CLIENTE
+                   WHEN OP-NOVO
+                       PERFORM CADASTRAR-CLIENTE
+                   WHEN OP-ATUALIZAR
+                       PERFORM ATUALIZAR-CLIENTE
+                   WHEN OTHER
+                       SET RC-ERRO TO TRUE
+                       MOVE 'Operacao invalida'
+                           TO WS-MENSAGEM
+               END-EVALUATE
+               PERFORM DESCONECTAR-DB2
+           ELSE
+               SET RC-ERRO TO TRUE
+               MOVE 'Erro ao conectar no DB2'
+                   TO WS-MENSAGEM
+           END-IF
            PERFORM GRAVAR-RESPONSE
            STOP RUN.
 
       *----------------------------------------------------------------*
       * LER-REQUEST                                                    *
+      * Desmonta o registro de entrada nos campos do contrato          *
       *----------------------------------------------------------------*
        LER-REQUEST.
            INITIALIZE WS-REQUEST
@@ -105,104 +95,121 @@
            OPEN INPUT ARQUIVO-REQUEST
            READ ARQUIVO-REQUEST
                AT END
-                   MOVE '02' TO WS-RETURN-CODE
+                   SET RC-ERRO TO TRUE
+                   MOVE 'Erro ao ler requisicao'
+                       TO WS-MENSAGEM
            END-READ
-           MOVE REGISTRO-REQUEST(1:1)   TO WS-OPERACAO
-           MOVE REGISTRO-REQUEST(2:4)   TO WS-CODIGO
-           MOVE REGISTRO-REQUEST(6:40)  TO WS-NOME-REQ
-           MOVE REGISTRO-REQUEST(46:15) TO WS-TELEFONE-REQ
-           MOVE REGISTRO-REQUEST(61:50) TO WS-EMAIL-REQ
+           MOVE REGISTRO-REQUEST(1:110) TO WS-REQUEST
            CLOSE ARQUIVO-REQUEST.
+
+      *----------------------------------------------------------------*
+      * CONECTAR-DB2 - chama o wrapper C                               *
+      *----------------------------------------------------------------*
+       CONECTAR-DB2.
+           MOVE SPACES TO WS-DB-RC
+           CALL "DBCONECT" USING
+               WS-DB-RC
+           END-CALL.
+
+      *----------------------------------------------------------------*
+      * DESCONECTAR-DB2                                                *
+      *----------------------------------------------------------------*
+       DESCONECTAR-DB2.
+           CALL "DBDISCON" USING
+               WS-DB-RC
+           END-CALL.
 
       *----------------------------------------------------------------*
       * CONSULTAR-CLIENTE                                              *
       *----------------------------------------------------------------*
        CONSULTAR-CLIENTE.
-           OPEN INPUT ARQUIVO-CLIENTES
-           MOVE WS-CODIGO TO ARQ-CODIGO
-           READ ARQUIVO-CLIENTES
-               INVALID KEY
-                   MOVE '01' TO WS-RETURN-CODE
-                   MOVE 'Cliente nao encontrado'
-                       TO WS-MENSAGEM
-               NOT INVALID KEY
-                   MOVE ARQ-NOME      TO WS-NOME
-                   MOVE ARQ-TELEFONE  TO WS-TEL-OUT
-                   MOVE ARQ-EMAIL     TO WS-EMAIL-OUT
-                   MOVE '00'          TO WS-RETURN-CODE
+           MOVE SPACES TO WS-NOME
+           MOVE SPACES TO WS-TEL-OUT
+           MOVE SPACES TO WS-EMAIL-OUT
+           MOVE SPACES TO WS-DB-RC
+           CALL "DBSELECT" USING
+               WS-CODIGO
+               WS-NOME
+               WS-TEL-OUT
+               WS-EMAIL-OUT
+               WS-DB-RC
+           END-CALL
+           MOVE WS-DB-RC TO WS-RETURN-CODE
+           EVALUATE TRUE
+               WHEN RC-SUCESSO
                    MOVE 'Consulta realizada com sucesso'
                        TO WS-MENSAGEM
-           END-READ
-           CLOSE ARQUIVO-CLIENTES.
+               WHEN RC-NAO-ENCONTRADO
+                   MOVE 'Cliente nao encontrado'
+                       TO WS-MENSAGEM
+               WHEN OTHER
+                   MOVE 'Erro ao consultar cliente'
+                       TO WS-MENSAGEM
+           END-EVALUATE.
 
       *----------------------------------------------------------------*
       * CADASTRAR-CLIENTE                                              *
       *----------------------------------------------------------------*
        CADASTRAR-CLIENTE.
-           OPEN I-O ARQUIVO-CLIENTES
-           MOVE WS-CODIGO       TO ARQ-CODIGO
-           MOVE WS-NOME-REQ     TO ARQ-NOME
-           MOVE WS-TELEFONE-REQ TO ARQ-TELEFONE
-           MOVE WS-EMAIL-REQ    TO ARQ-EMAIL
-           WRITE REGISTRO-CLIENTE
-               INVALID KEY
-                   MOVE '01' TO WS-RETURN-CODE
-                   MOVE 'Codigo ja cadastrado'
-                       TO WS-MENSAGEM
-               NOT INVALID KEY
-                   MOVE ARQ-NOME      TO WS-NOME
-                   MOVE ARQ-TELEFONE  TO WS-TEL-OUT
-                   MOVE ARQ-EMAIL     TO WS-EMAIL-OUT
-                   MOVE '00'          TO WS-RETURN-CODE
+           MOVE SPACES TO WS-DB-RC
+           CALL "DBINSERT" USING
+               WS-CODIGO
+               WS-NOME-REQ
+               WS-TELEFONE-REQ
+               WS-EMAIL-REQ
+               WS-DB-RC
+           END-CALL
+           MOVE WS-DB-RC TO WS-RETURN-CODE
+           EVALUATE TRUE
+               WHEN RC-SUCESSO
+                   MOVE WS-NOME-REQ     TO WS-NOME
+                   MOVE WS-TELEFONE-REQ TO WS-TEL-OUT
+                   MOVE WS-EMAIL-REQ    TO WS-EMAIL-OUT
                    MOVE 'Cliente cadastrado com sucesso'
                        TO WS-MENSAGEM
-           END-WRITE
-           CLOSE ARQUIVO-CLIENTES.
+               WHEN RC-NAO-ENCONTRADO
+                   MOVE 'Codigo ja cadastrado'
+                       TO WS-MENSAGEM
+               WHEN OTHER
+                   MOVE 'Erro ao cadastrar cliente'
+                       TO WS-MENSAGEM
+           END-EVALUATE.
 
       *----------------------------------------------------------------*
       * ATUALIZAR-CLIENTE                                              *
       *----------------------------------------------------------------*
        ATUALIZAR-CLIENTE.
-           OPEN I-O ARQUIVO-CLIENTES
-           MOVE WS-CODIGO TO ARQ-CODIGO
-           READ ARQUIVO-CLIENTES
-               INVALID KEY
-                   MOVE '01' TO WS-RETURN-CODE
+           MOVE SPACES TO WS-NOME
+           MOVE SPACES TO WS-DB-RC
+           CALL "DBUPDATE" USING
+               WS-CODIGO
+               WS-TELEFONE-REQ
+               WS-EMAIL-REQ
+               WS-NOME
+               WS-DB-RC
+           END-CALL
+           MOVE WS-DB-RC TO WS-RETURN-CODE
+           EVALUATE TRUE
+               WHEN RC-SUCESSO
+                   MOVE WS-TELEFONE-REQ TO WS-TEL-OUT
+                   MOVE WS-EMAIL-REQ    TO WS-EMAIL-OUT
+                   MOVE 'Atualizacao realizada com sucesso'
+                       TO WS-MENSAGEM
+               WHEN RC-NAO-ENCONTRADO
                    MOVE 'Cliente nao encontrado'
                        TO WS-MENSAGEM
-               NOT INVALID KEY
-                   MOVE WS-TELEFONE-REQ TO ARQ-TELEFONE
-                   MOVE WS-EMAIL-REQ    TO ARQ-EMAIL
-                   REWRITE REGISTRO-CLIENTE
-                       INVALID KEY
-                           MOVE '02' TO WS-RETURN-CODE
-                           MOVE 'Erro ao atualizar'
-                               TO WS-MENSAGEM
-                       NOT INVALID KEY
-                           MOVE ARQ-NOME     TO WS-NOME
-                           MOVE ARQ-TELEFONE TO WS-TEL-OUT
-                           MOVE ARQ-EMAIL    TO WS-EMAIL-OUT
-                           MOVE '00' TO WS-RETURN-CODE
-                           MOVE 'Atualizacao realizada'
-                               TO WS-MENSAGEM
-                   END-REWRITE
-           END-READ
-           CLOSE ARQUIVO-CLIENTES.
+               WHEN OTHER
+                   MOVE 'Erro ao atualizar cliente'
+                       TO WS-MENSAGEM
+           END-EVALUATE.
 
       *----------------------------------------------------------------*
       * GRAVAR-RESPONSE                                                *
+      * Serializa o contrato de saida no registro de 187 bytes         *
       *----------------------------------------------------------------*
        GRAVAR-RESPONSE.
-           MOVE SPACES TO REGISTRO-RESPONSE
-           STRING
-               WS-RETURN-CODE
-               WS-NOME
-               WS-TEL-OUT
-               WS-EMAIL-OUT
-               WS-MENSAGEM
-               DELIMITED BY SIZE
-               INTO REGISTRO-RESPONSE
-           END-STRING
+           MOVE SPACES      TO REGISTRO-RESPONSE
+           MOVE WS-RESPONSE TO REGISTRO-RESPONSE(1:187)
            OPEN OUTPUT ARQUIVO-RESPONSE
            WRITE REGISTRO-RESPONSE
            CLOSE ARQUIVO-RESPONSE.

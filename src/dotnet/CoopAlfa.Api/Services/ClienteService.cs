@@ -5,34 +5,42 @@ using CoopAlfa.Api.Models;
 namespace CoopAlfa.Api.Services;
 
 /// <summary>
-/// Servico que integra .NET ao COBOL via processo separado.
-/// Grava a requisicao em REQUEST.DAT, executa CLICORE.exe,
-/// e le a resposta de RESPONSE.DAT.
+/// Integra a camada .NET ao nucleo COBOL via processo separado.
+///
+/// Grava a requisicao em REQUEST.DAT, executa CLICORE.exe, e le a resposta
+/// de RESPONSE.DAT. O CLICORE acessa o DB2 atraves do wrapper DB2HELPER (ODBC).
+///
+/// O layout dos dois arquivos vem de <see cref="ClienteContrato"/>, que espelha
+/// a copybook CLIENTE.cpy. Este servico nao conhece posicoes de campo.
 /// </summary>
 public class ClienteService : IClienteService
 {
     private static readonly string CobolDir =
         Path.Combine(AppContext.BaseDirectory, "cobol");
 
+    private const int TimeoutMs = 30_000;
+
+    /// <summary>
+    /// REQUEST.DAT e RESPONSE.DAT sao arquivos compartilhados: duas chamadas
+    /// simultaneas sobrescreveriam uma a outra. O lock serializa o acesso.
+    /// Em producao, o correto seria um par de arquivos temporarios por
+    /// requisicao — ou um COBOL residente, como o CICS faz no mainframe.
+    /// </summary>
     private static readonly object _lock = new();
 
-    private ResponseCobol ExecutarCobol(string operacao, int codigo,
+    private static RespostaCobol ExecutarCobol(
+        string operacao, int codigo,
         string nome = "", string telefone = "", string email = "")
     {
         lock (_lock)
         {
-            // Layout: operacao(1) + codigo(4) + nome(40) + telefone(15) + email(50)
-            var request = new StringBuilder();
-            request.Append(operacao.PadRight(1)[..1]);
-            request.Append(codigo.ToString().PadLeft(4, '0'));
-            request.Append(nome.PadRight(40)[..40]);
-            request.Append(telefone.PadRight(15)[..15]);
-            request.Append(email.PadRight(50)[..50]);
-
             var requestPath  = Path.Combine(CobolDir, "REQUEST.DAT");
             var responsePath = Path.Combine(CobolDir, "RESPONSE.DAT");
 
-            File.WriteAllText(requestPath, request.ToString(), Encoding.ASCII);
+            var request = ClienteContrato.MontarRequest(
+                operacao, codigo, nome, telefone, email);
+
+            File.WriteAllText(requestPath, request, Encoding.ASCII);
 
             var psi = new ProcessStartInfo
             {
@@ -44,32 +52,22 @@ public class ClienteService : IClienteService
 
             using (var proc = Process.Start(psi))
             {
-                proc!.WaitForExit(15000);
+                proc!.WaitForExit(TimeoutMs);
             }
 
             if (!File.Exists(responsePath))
-                return new ResponseCobol { ReturnCode = "02",
-                    Mensagem = "Erro: resposta nao gerada" };
+                return RespostaCobol.Erro("O nucleo COBOL nao gerou resposta.");
 
-            var linha = File.ReadAllText(responsePath, Encoding.ASCII)
-                            .Replace("\r", "").Replace("\n", "")
-                            .PadRight(187);
-
-            return new ResponseCobol
-            {
-                ReturnCode = linha.Substring(0, 2).Trim(),
-                Nome       = linha.Substring(2, 40).Trim(),
-                Telefone   = linha.Substring(42, 15).Trim(),
-                Email      = linha.Substring(57, 50).Trim(),
-                Mensagem   = linha.Substring(107, 80).Trim()
-            };
+            var conteudo = File.ReadAllText(responsePath, Encoding.ASCII);
+            return ClienteContrato.LerResponse(conteudo);
         }
     }
 
     public ClienteModel? Consultar(int codigo)
     {
-        var r = ExecutarCobol("C", codigo);
-        if (r.ReturnCode == "01") return null;
+        var r = ExecutarCobol(ClienteContrato.OperacaoConsultar, codigo);
+
+        if (r.NaoEncontrado) return null;
 
         return new ClienteModel
         {
@@ -83,27 +81,19 @@ public class ClienteService : IClienteService
     public (bool sucesso, string mensagem) Cadastrar(
         int codigo, string nome, string telefone, string email)
     {
-        var r = ExecutarCobol("N", codigo, nome, telefone, email);
-        return r.ReturnCode == "00"
-            ? (true, r.Mensagem)
-            : (false, r.Mensagem);
+        var r = ExecutarCobol(
+            ClienteContrato.OperacaoNovo, codigo, nome, telefone, email);
+
+        return (r.Sucesso, r.Mensagem);
     }
 
     public (bool sucesso, string mensagem) Atualizar(
         int codigo, string telefone, string email)
     {
-        var r = ExecutarCobol("A", codigo, string.Empty, telefone, email);
-        return r.ReturnCode == "00"
-            ? (true, r.Mensagem)
-            : (false, r.Mensagem);
-    }
+        var r = ExecutarCobol(
+            ClienteContrato.OperacaoAtualizar, codigo,
+            nome: string.Empty, telefone: telefone, email: email);
 
-    private class ResponseCobol
-    {
-        public string ReturnCode { get; set; } = "02";
-        public string Nome       { get; set; } = string.Empty;
-        public string Telefone   { get; set; } = string.Empty;
-        public string Email      { get; set; } = string.Empty;
-        public string Mensagem   { get; set; } = string.Empty;
+        return (r.Sucesso, r.Mensagem);
     }
 }
